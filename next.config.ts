@@ -1,4 +1,8 @@
 import type { NextConfig } from "next";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 let remotePatterns: NonNullable<NextConfig["images"]>["remotePatterns"] = [];
@@ -20,6 +24,9 @@ if (supabaseUrl) {
 const nextConfig: NextConfig = {
   images: {
     remotePatterns,
+  },
+  turbopack: {
+    root: projectRoot,
   },
 };
 
