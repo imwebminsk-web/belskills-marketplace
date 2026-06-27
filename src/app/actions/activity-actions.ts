@@ -36,9 +36,9 @@ function normalizeActivityLimit(limit: number): number {
   return Math.min(Math.max(limit, 1), MAX_RECENT_ACTIVITY_QUERY_LIMIT);
 }
 
-async function loadTeacherAssignmentBlockTitles(
+async function loadOrganizationAssignmentBlockTitles(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  teacherId: string,
+  organizationId: string,
 ): Promise<Map<string, string>> {
   const titleByBlockId = new Map<string, string>();
 
@@ -50,13 +50,13 @@ async function loadTeacherAssignmentBlockTitles(
       lessons!inner(
         title,
         modules!inner(
-          courses!inner(teacher_id)
+          courses!inner(organization_id)
         )
       )
     `,
     )
     .eq("type", "assignment")
-    .eq("lessons.modules.courses.teacher_id", teacherId);
+    .eq("lessons.modules.courses.organization_id", organizationId);
 
   if (error) {
     console.error(
@@ -120,14 +120,14 @@ async function attachStudentNames(
 }
 
 /**
- * Последние события активности учеников на курсах преподавателя.
+ * Последние события активности учеников на курсах организации.
  */
 export async function getRecentActivity(
-  teacherId: string,
+  organizationId: string,
   limit = 15,
 ): Promise<ActivityEvent[]> {
-  const tid = teacherId.trim();
-  if (!tid) {
+  const orgId = organizationId.trim();
+  if (!orgId) {
     return [];
   }
 
@@ -140,24 +140,10 @@ export async function getRecentActivity(
     return [];
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    return [];
-  }
-
-  if (profile.role !== "admin" && user.id !== tid) {
-    return [];
-  }
-
   const fetchLimit = normalizeActivityLimit(limit);
-  const assignmentTitlesByBlockId = await loadTeacherAssignmentBlockTitles(
+  const assignmentTitlesByBlockId = await loadOrganizationAssignmentBlockTitles(
     supabase,
-    tid,
+    orgId,
   );
   const assignmentBlockIds = [...assignmentTitlesByBlockId.keys()];
   const dataClient = rlsBypassClient(supabase);
@@ -176,11 +162,11 @@ export async function getRecentActivity(
         user_id,
         cohorts!inner(
           name,
-          courses!inner(teacher_id)
+          courses!inner(organization_id)
         )
       `,
       )
-      .eq("cohorts.courses.teacher_id", tid)
+      .eq("cohorts.courses.organization_id", orgId)
       .order("enrolled_at", { ascending: false })
       .limit(fetchLimit),
     dataClient
@@ -196,11 +182,11 @@ export async function getRecentActivity(
         tests!inner(
           id,
           title,
-          user_id
+          organization_id
         )
       `,
       )
-      .eq("tests.user_id", tid)
+      .eq("tests.organization_id", orgId)
       .eq("status", "completed")
       .eq("is_training_mode", false)
       .not("completed_at", "is", null)

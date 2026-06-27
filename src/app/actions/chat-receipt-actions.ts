@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { getUserTenantsSafe, isOrgStaffRole } from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
 
 export type MarkChatAsReadResult =
@@ -25,26 +26,32 @@ async function collectAccessibleCohortIds(
     .not("cohort_id", "is", null);
 
   if (enrollError) {
-    throw new Error(enrollError.message);
-  }
-
-  for (const row of enrollRows ?? []) {
-    if (row.cohort_id) {
-      cohortIds.add(row.cohort_id);
+    console.error("[getUnreadCounts] enrollments", enrollError.message);
+  } else {
+    for (const row of enrollRows ?? []) {
+      if (row.cohort_id) {
+        cohortIds.add(row.cohort_id);
+      }
     }
   }
 
-  const { data: teacherCohorts, error: teacherError } = await supabase
-    .from("cohorts")
-    .select("id, courses!inner(teacher_id)")
-    .eq("courses.teacher_id", userId);
+  const staffOrgIds = (await getUserTenantsSafe(userId))
+    .filter((tenant) => isOrgStaffRole(tenant.role))
+    .map((tenant) => tenant.organizationId);
 
-  if (teacherError) {
-    throw new Error(teacherError.message);
-  }
+  if (staffOrgIds.length > 0) {
+    const { data: teacherCohorts, error: teacherError } = await supabase
+      .from("cohorts")
+      .select("id, courses!inner(organization_id)")
+      .in("courses.organization_id", staffOrgIds);
 
-  for (const row of teacherCohorts ?? []) {
-    cohortIds.add(row.id);
+    if (teacherError) {
+      console.error("[getUnreadCounts] teacher cohorts", teacherError.message);
+    } else {
+      for (const row of teacherCohorts ?? []) {
+        cohortIds.add(row.id);
+      }
+    }
   }
 
   return [...cohortIds];

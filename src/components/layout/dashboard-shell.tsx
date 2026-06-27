@@ -10,6 +10,7 @@ import {
   SheetContent,
   SheetTitle,
 } from "@/components/ui/sheet";
+import type { OrganizationTierInfo } from "@/lib/auth/tenant";
 import type { ProfileRole } from "@/lib/dashboard/sidebar-nav";
 
 export type DashboardShellUser = {
@@ -24,6 +25,7 @@ export type DashboardShellProps = {
   role: ProfileRole;
   navBadges?: Record<string, number>;
   navPendingBadges?: Record<string, number>;
+  organizationTier?: OrganizationTierInfo | null;
 };
 
 export function DashboardShell({
@@ -32,6 +34,7 @@ export function DashboardShell({
   role,
   navBadges,
   navPendingBadges,
+  organizationTier = null,
 }: DashboardShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
@@ -72,6 +75,7 @@ export function DashboardShell({
             onToggleSidebar={() => setIsSidebarOpen((open) => !open)}
             onOpenMobileNav={() => setIsMobileNavOpen(true)}
             role={role}
+            organizationTier={organizationTier}
           />
           <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-4 md:p-6 lg:p-8">
             {children}

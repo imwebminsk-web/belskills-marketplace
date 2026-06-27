@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { hasStaffAccess, loadAuthContext } from "@/lib/auth/access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
@@ -171,37 +172,16 @@ async function requireAuthenticatedUser() {
   return { ok: true as const, supabase, user };
 }
 
-function isStaffRole(role: ProfileRole | undefined): boolean {
-  return role === "teacher" || role === "admin";
-}
-
-async function getProfileRole(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-): Promise<ProfileRole | null> {
-  const { data: profile, error } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (error) {
-    console.error("[support-actions] profile role", error.message);
-    return null;
-  }
-
-  return profile?.role ?? null;
-}
-
 async function assertTicketAccess(
   supabase: Awaited<ReturnType<typeof createClient>>,
   ticketId: string,
   userId: string,
-  userRole: ProfileRole | null,
 ): Promise<
   | { ok: true; status: string }
   | { ok: false; error: string }
 > {
+  const { profile, tenants } = await loadAuthContext(userId);
+
   const { data: ticket, error } = await supabase
     .from("support_tickets")
     .select("id, user_id, status")
@@ -217,7 +197,10 @@ async function assertTicketAccess(
     return { ok: false, error: "Обращение не найдено." };
   }
 
-  if (isStaffRole(userRole ?? undefined) || ticket.user_id === userId) {
+  if (
+    (profile != null && hasStaffAccess(profile, tenants)) ||
+    ticket.user_id === userId
+  ) {
     return { ok: true, status: ticket.status };
   }
 
@@ -230,12 +213,18 @@ async function requireStaffUser() {
     return auth;
   }
 
-  const role = await getProfileRole(auth.supabase, auth.user.id);
-  if (!isStaffRole(role ?? undefined)) {
+  const { profile, tenants } = await loadAuthContext(auth.user.id);
+  if (!profile || !hasStaffAccess(profile, tenants)) {
     return { ok: false as const, error: "Нет доступа." };
   }
 
-  return { ok: true as const, supabase: auth.supabase, user: auth.user, role };
+  return {
+    ok: true as const,
+    supabase: auth.supabase,
+    user: auth.user,
+    profile,
+    tenants,
+  };
 }
 
 function requireSupportRpcClient():
@@ -378,10 +367,10 @@ export async function markSupportTicketAsRead(
   }
 
   const { supabase, user } = auth;
-  const userRole = await getProfileRole(supabase, user.id);
 
   if (role === "teacher") {
-    if (!isStaffRole(userRole ?? undefined)) {
+    const { profile, tenants } = await loadAuthContext(user.id);
+    if (!profile || !hasStaffAccess(profile, tenants)) {
       return { success: false, error: "Нет доступа." };
     }
 
@@ -400,7 +389,7 @@ export async function markSupportTicketAsRead(
       return { success: false, error: "Не удалось отметить прочитанным." };
     }
   } else {
-    const access = await assertTicketAccess(supabase, tid, user.id, userRole);
+    const access = await assertTicketAccess(supabase, tid, user.id);
     if (!access.ok) {
       return { success: false, error: access.error };
     }
@@ -434,13 +423,13 @@ export async function getSupportUnreadCount(): Promise<GetSupportUnreadCountResu
   }
 
   const { supabase, user } = auth;
-  const userRole = await getProfileRole(supabase, user.id);
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  if (!userRole) {
+  if (!profile) {
     return { success: false, error: "Профиль не найден." };
   }
 
-  if (userRole === "student") {
+  if (profile.role === "student") {
     const { count, error } = await supabase
       .from("support_tickets")
       .select("id", { count: "exact", head: true })
@@ -455,7 +444,7 @@ export async function getSupportUnreadCount(): Promise<GetSupportUnreadCountResu
     return { success: true, count: count ?? 0 };
   }
 
-  if (isStaffRole(userRole)) {
+  if (hasStaffAccess(profile, tenants)) {
     const { count, error } = await supabase
       .from("support_tickets")
       .select("id", { count: "exact", head: true })
@@ -598,8 +587,7 @@ export async function getSupportMessages(
   }
 
   const { supabase, user } = auth;
-  const userRole = await getProfileRole(supabase, user.id);
-  const access = await assertTicketAccess(supabase, tid, user.id, userRole);
+  const access = await assertTicketAccess(supabase, tid, user.id);
   if (!access.ok) {
     return { success: false, error: access.error };
   }
@@ -655,8 +643,8 @@ export async function sendSupportMessage(
   }
 
   const { supabase, user } = auth;
-  const userRole = await getProfileRole(supabase, user.id);
-  const access = await assertTicketAccess(supabase, tid, user.id, userRole);
+  const { profile, tenants } = await loadAuthContext(user.id);
+  const access = await assertTicketAccess(supabase, tid, user.id);
   if (!access.ok) {
     return { success: false, error: access.error };
   }
@@ -686,7 +674,8 @@ export async function sendSupportMessage(
   } else {
     const { error: touchError } = await adminClient.rpc("touch_support_ticket", {
       p_ticket_id: tid,
-      p_sender_role: isStaffRole(userRole ?? undefined) ? "teacher" : "student",
+      p_sender_role:
+        profile != null && hasStaffAccess(profile, tenants) ? "teacher" : "student",
     });
 
     if (touchError) {

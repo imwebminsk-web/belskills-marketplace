@@ -154,8 +154,8 @@ export function getGradingVisuals(
 }
 
 export const GRADING_COLOR_RING_CLASSES: Record<GradingColor, string> = {
-  green: "border-2 border-green-500/50 bg-green-500/10",
-  blue: "border-2 border-blue-500/50 bg-blue-500/10",
+  green: "border-2 border-brand/50 bg-brand/10",
+  blue: "border-2 border-brand/40 bg-brand/8",
   yellow: "border-2 border-yellow-500/50 bg-yellow-500/10",
   orange: "border-2 border-orange-500/50 bg-orange-500/10",
   red: "border-2 border-red-500/50 bg-red-500/10",

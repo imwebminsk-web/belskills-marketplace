@@ -41,7 +41,7 @@ export function TeacherCourseCard({ course }: TeacherCourseCardProps) {
           className={cn(
             "absolute top-3 left-3 rounded-md border-0 px-2.5 py-1 text-xs font-medium shadow-sm",
             isPublished
-              ? "bg-white/95 text-emerald-700"
+              ? "bg-white/95 text-brand"
               : "bg-white/95 text-amber-800",
           )}
         >

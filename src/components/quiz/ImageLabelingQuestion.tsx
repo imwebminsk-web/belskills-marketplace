@@ -279,7 +279,7 @@ function resolveImageLabelReviewState(
 function imageLabelReviewContainerClass(state: ImageLabelReviewState): string {
   switch (state) {
     case "correct":
-      return "border-transparent bg-emerald-50/30 ring-4 ring-emerald-500 dark:bg-emerald-950/20";
+      return "border-transparent bg-brand/10 ring-4 ring-brand dark:bg-brand/20";
     case "incorrect":
       return "border-transparent bg-red-50/30 ring-4 ring-destructive dark:bg-red-950/20";
     case "missed":
@@ -293,7 +293,7 @@ function ImageLabelReviewBadge({ state }: { state: ImageLabelReviewState }) {
   if (state === "correct") {
     return (
       <Badge
-        className="absolute top-2 right-2 z-20 gap-1 border-emerald-600/30 bg-emerald-500/95 px-2 py-0.5 text-emerald-50 shadow-md hover:bg-emerald-500/95"
+        className="absolute top-2 right-2 z-20 gap-1 border-brand/30 bg-brand/95 px-2 py-0.5 text-brand-foreground shadow-md hover:bg-brand/95"
         aria-hidden
       >
         <Check className="size-3.5 shrink-0" strokeWidth={2.5} />

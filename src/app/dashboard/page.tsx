@@ -1,5 +1,3 @@
-import { redirect } from "next/navigation";
-
 import {
   getStudentDashboardCourses,
   getStudentProgress,
@@ -11,9 +9,71 @@ import { PendingReviewsWidget } from "@/components/dashboard/teacher/pending-rev
 import { StudentDashboardHome } from "@/components/dashboard/student/student-dashboard-home";
 import { SectionCards } from "@/components/section-cards";
 import { SiteHeader } from "@/components/site-header";
+import {
+  getPrimaryActiveStaffTenant,
+  getUserTenantsSafe,
+} from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
 
 import { fetchDashboardData } from "./fetch-dashboard-data";
+
+async function renderStudentDashboard(
+  userId: string,
+  displayName: string,
+) {
+  const supabase = await createClient();
+
+  const [progressRes, coursesRes, unreadRes] = await Promise.all([
+    getStudentProgress(userId),
+    getStudentDashboardCourses(userId),
+    getUnreadCounts(),
+  ]);
+
+  const items = progressRes.success ? progressRes.items : [];
+  const courseSummaries = coursesRes.success ? coursesRes.courses : [];
+  const unreadMap = unreadRes.success ? unreadRes.counts : {};
+
+  if (!progressRes.success) {
+    console.error("[StudentDashboard] progress", progressRes.error);
+  }
+  if (!coursesRes.success) {
+    console.error("[StudentDashboard] courses", coursesRes.error);
+  }
+
+  const { data: enrollRows, error: enrollError } = await supabase
+    .from("enrollments")
+    .select("course_id, cohort_id")
+    .eq("user_id", userId);
+
+  if (enrollError) {
+    console.error("[StudentDashboard] enrollments", enrollError.message);
+  }
+
+  const cohortIdByCourseId: Record<string, string | null> = {};
+  for (const row of enrollRows ?? []) {
+    cohortIdByCourseId[row.course_id] = row.cohort_id;
+  }
+
+  const needsAttention = items.filter(
+    (item) => item.type === "assignment" && item.status === "rejected",
+  );
+
+  return (
+    <>
+      <SiteHeader fullName={displayName} />
+      <div className="flex flex-1 flex-col min-w-0">
+        <div className="@container/main flex min-w-0 flex-1 flex-col gap-2">
+          <StudentDashboardHome
+            needsAttention={needsAttention}
+            courseSummaries={courseSummaries}
+            unreadMap={unreadMap}
+            cohortIdByCourseId={cohortIdByCourseId}
+          />
+        </div>
+      </div>
+    </>
+  );
+}
 
 export default async function Page() {
   const supabase = await createClient();
@@ -22,119 +82,94 @@ export default async function Page() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    return renderStudentDashboard("", "User");
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const [{ data: profile, error: profileError }, tenants] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name, is_global_admin")
+      .eq("id", user.id)
+      .maybeSingle(),
+    getUserTenantsSafe(user.id),
+  ]);
 
-  if (profileError || !profile) {
-    redirect("/login");
+  if (profileError) {
+    console.error("[Dashboard] profile", profileError.message);
   }
 
   const displayName =
-    profile.full_name?.trim() ||
+    profile?.full_name?.trim() ||
     user.email?.split("@")[0] ||
-    "Пользователь";
+    "User";
 
-  if (profile.role === "student") {
-    const [progressRes, coursesRes, unreadRes] = await Promise.all([
-      getStudentProgress(user.id),
-      getStudentDashboardCourses(user.id),
-      getUnreadCounts(),
-    ]);
+  if (profile?.is_global_admin) {
+    try {
+      const payload = await fetchDashboardData(user.id, "admin");
 
-    if (!progressRes.success) {
-      throw new Error(progressRes.error);
-    }
-    if (!coursesRes.success) {
-      throw new Error(coursesRes.error);
-    }
-
-    const unreadMap = unreadRes.success ? unreadRes.counts : {};
-
-    const { data: enrollRows, error: enrollError } = await supabase
-      .from("enrollments")
-      .select("course_id, cohort_id")
-      .eq("user_id", user.id);
-
-    if (enrollError) {
-      console.error("[StudentDashboard] enrollments", enrollError.message);
-    }
-
-    const cohortIdByCourseId: Record<string, string | null> = {};
-    for (const row of enrollRows ?? []) {
-      cohortIdByCourseId[row.course_id] = row.cohort_id;
-    }
-
-    const items = progressRes.items;
-    const needsAttention = items.filter(
-      (i) => i.type === "assignment" && i.status === "rejected",
-    );
-    const courseSummaries = coursesRes.courses;
-
-    return (
-      <>
-        <SiteHeader fullName={displayName} />
-        <div className="flex flex-1 flex-col min-w-0">
-          <div className="@container/main flex min-w-0 flex-1 flex-col gap-2">
-            <StudentDashboardHome
-              needsAttention={needsAttention}
-              courseSummaries={courseSummaries}
-              unreadMap={unreadMap}
-              cohortIdByCourseId={cohortIdByCourseId}
-            />
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  const payload = await fetchDashboardData(user.id, profile.role);
-
-  if (profile.role === "admin") {
-    return (
-      <>
-        <SiteHeader fullName={displayName} />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="@container/main flex min-w-0 flex-1 flex-col gap-2">
-            <div className="flex min-w-0 flex-col gap-4 py-4 md:gap-6 md:py-6">
-              <SectionCards adminMetrics={payload.adminMetrics} cards={[]} />
-              <UsersTable
-                users={payload.adminUsers ?? []}
-                currentUserId={user.id}
-              />
+      return (
+        <>
+          <SiteHeader fullName={displayName} />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="@container/main flex min-w-0 flex-1 flex-col gap-2">
+              <div className="flex min-w-0 flex-col gap-4 py-4 md:gap-6 md:py-6">
+                <SectionCards adminMetrics={payload.adminMetrics} cards={[]} />
+                <UsersTable
+                  users={payload.adminUsers ?? []}
+                  currentUserId={user.id}
+                />
+              </div>
             </div>
           </div>
-        </div>
-      </>
-    );
+        </>
+      );
+    } catch (error) {
+      console.error(
+        "[Dashboard] admin",
+        error instanceof Error ? error.message : error,
+      );
+      return renderStudentDashboard(user.id, displayName);
+    }
   }
 
-  return (
-    <>
-      <SiteHeader fullName={displayName} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="@container/main flex min-w-0 flex-1 flex-col gap-2">
-          <div className="flex min-w-0 flex-col gap-4 py-4 md:gap-6 md:py-6">
-            <SectionCards
-              cards={payload.sectionCards}
-              teacherMetrics={payload.teacherMetrics}
-            />
-            {profile.role === "teacher" ? (
-              <>
-                <PendingReviewsWidget
-                  reviews={payload.pendingReviews ?? []}
-                />
-                <ActivityFeedWidget events={payload.activityEvents ?? []} />
-              </>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </>
-  );
+  if (profile != null) {
+    const staffTenant = getPrimaryActiveStaffTenant(tenants);
+
+    if (staffTenant) {
+      try {
+        const payload = await fetchDashboardData(
+          user.id,
+          "teacher",
+          staffTenant.organizationId,
+        );
+
+        return (
+          <>
+            <SiteHeader fullName={displayName} />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <div className="@container/main flex min-w-0 flex-1 flex-col gap-2">
+                <div className="flex min-w-0 flex-col gap-4 py-4 md:gap-6 md:py-6">
+                  <SectionCards
+                    cards={payload.sectionCards}
+                    teacherMetrics={payload.teacherMetrics}
+                  />
+                  <PendingReviewsWidget
+                    reviews={payload.pendingReviews ?? []}
+                  />
+                  <ActivityFeedWidget events={payload.activityEvents ?? []} />
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      } catch (error) {
+        console.error(
+          "[Dashboard] teacher org",
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+  }
+
+  return renderStudentDashboard(user.id, displayName);
 }

@@ -9,6 +9,11 @@ import {
 } from "@/components/dashboard/teacher/cohorts/cohorts-list";
 import { CreateCohortDialog } from "@/components/dashboard/teacher/cohorts/create-cohort-dialog";
 import { SiteHeader } from "@/components/site-header";
+import {
+  getStaffOrganizationIds,
+  hasStaffAccess,
+} from "@/lib/auth/access";
+import { getUserTenantsSafe } from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
@@ -26,34 +31,59 @@ export default async function DashboardCohortsPage() {
     redirect("/login");
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const [{ data: profile, error: profileError }, tenants] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name, is_global_admin")
+      .eq("id", user.id)
+      .maybeSingle(),
+    getUserTenantsSafe(user.id),
+  ]);
 
   if (profileError || !profile) {
     redirect("/login");
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (!hasStaffAccess(profile, tenants)) {
     redirect("/dashboard");
   }
 
-  const { data: myCourses, error: coursesError } = await supabase
-    .from("courses")
-    .select("id, title")
-    .eq("teacher_id", user.id)
-    .order("title");
+  let courseOptions: { id: string; title: string }[] = [];
 
-  if (coursesError) {
-    console.error("[DashboardCohortsPage] courses", coursesError.message);
+  if (profile.is_global_admin) {
+    const { data: myCourses, error: coursesError } = await supabase
+      .from("courses")
+      .select("id, title")
+      .order("title");
+
+    if (coursesError) {
+      console.error("[DashboardCohortsPage] courses", coursesError.message);
+    }
+
+    courseOptions = (myCourses ?? []).map((c) => ({
+      id: c.id,
+      title: c.title,
+    }));
+  } else {
+    const orgIds = getStaffOrganizationIds(tenants);
+
+    if (orgIds.length > 0) {
+      const { data: myCourses, error: coursesError } = await supabase
+        .from("courses")
+        .select("id, title")
+        .in("organization_id", orgIds)
+        .order("title");
+
+      if (coursesError) {
+        console.error("[DashboardCohortsPage] courses", coursesError.message);
+      }
+
+      courseOptions = (myCourses ?? []).map((c) => ({
+        id: c.id,
+        title: c.title,
+      }));
+    }
   }
-
-  const courseOptions = (myCourses ?? []).map((c) => ({
-    id: c.id,
-    title: c.title,
-  }));
 
   const courseIds = courseOptions.map((c) => c.id);
 

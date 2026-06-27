@@ -1,5 +1,10 @@
 "use server";
 
+import {
+  getPrimaryActiveStaffTenant,
+  getUserTenantsSafe,
+  resolveDashboardShellRole,
+} from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
 
 import { fetchDashboardData, type DashboardData } from "./fetch-dashboard-data";
@@ -14,13 +19,23 @@ export async function getDashboardData(): Promise<DashboardData | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const [{ data: profile, error: profileError }, tenants] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("is_global_admin")
+      .eq("id", user.id)
+      .maybeSingle(),
+    getUserTenantsSafe(user.id),
+  ]);
 
   if (profileError || !profile) return null;
 
-  return fetchDashboardData(user.id, profile.role);
+  const shellRole = resolveDashboardShellRole(profile.is_global_admin, tenants);
+  const primaryTenant = getPrimaryActiveStaffTenant(tenants);
+
+  return fetchDashboardData(
+    user.id,
+    shellRole,
+    shellRole === "teacher" ? primaryTenant?.organizationId : undefined,
+  );
 }

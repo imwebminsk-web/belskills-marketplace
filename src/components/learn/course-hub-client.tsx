@@ -49,7 +49,7 @@ export type CourseHubClientProps = {
   userId: string;
   userDisplayName: string;
   cohortId: string | null;
-  teacherId: string;
+  staffUserIds: string[];
   isChatEnabled?: boolean;
   unreadCount?: number;
 };
@@ -62,7 +62,7 @@ function typeBadge(
     return <Badge variant="secondary">{t("course_view.badgeTest")}</Badge>;
   }
   return (
-    <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10">
+    <Badge variant="outline" className="border-brand/40 bg-brand/10">
       {t("course_view.badgeAssignment")}
     </Badge>
   );
@@ -97,7 +97,7 @@ export function CourseHubClient({
   userId,
   userDisplayName,
   cohortId,
-  teacherId,
+  staffUserIds,
   isChatEnabled = true,
   unreadCount = 0,
 }: CourseHubClientProps) {
@@ -205,7 +205,7 @@ export function CourseHubClient({
                               >
                                 {done ? (
                                   <CheckCircle2
-                                    className="text-emerald-600 size-5 shrink-0 dark:text-emerald-400"
+                                    className="text-brand size-5 shrink-0"
                                     aria-label={t("course_view.lessonCompletedAria")}
                                   />
                                 ) : (
@@ -342,12 +342,12 @@ export function CourseHubClient({
             forceMount
             className={cn("mt-0", activeTab !== "chat" && "hidden")}
           >
-            {cohortId && teacherId ? (
+            {cohortId ? (
               <CohortChat
                 key={cohortId}
                 cohortId={cohortId}
                 currentUserId={userId}
-                teacherId={teacherId}
+                staffUserIds={staffUserIds}
                 isChatEnabled={isChatEnabled}
                 isTeacher={false}
               />

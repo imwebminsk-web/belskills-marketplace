@@ -10,8 +10,16 @@ export default {
   theme: {
     extend: {
       colors: {
+        brand: {
+          DEFAULT: "#0d9488",
+          foreground: "#ffffff",
+        },
+        accent: {
+          DEFAULT: "#e63503",
+          foreground: "#ffffff",
+        },
         growvy: {
-          primary: "#1D4ED8",
+          primary: "#0d9488",
           body: "#F4F6F8",
           content: "#FFFFFF",
           text: "#1A1D21",

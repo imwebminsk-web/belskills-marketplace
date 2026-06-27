@@ -5,9 +5,11 @@ import { Menu } from "lucide-react";
 import { FontSizeToggler } from "@/components/FontSizeToggler";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { GrowvyMenuIcon } from "@/components/layout/growvy-icons";
+import { OrganizationTierBadge } from "@/components/layout/organization-tier-badge";
 import { ModeToggle } from "@/components/mode-toggle";
 import { useLanguage } from "@/components/providers/language-provider";
 import { Button } from "@/components/ui/button";
+import type { OrganizationTierInfo } from "@/lib/auth/tenant";
 import type { ProfileRole } from "@/lib/dashboard/sidebar-nav";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +18,7 @@ type DashboardTopnavProps = {
   onToggleSidebar: () => void;
   onOpenMobileNav: () => void;
   role: ProfileRole;
+  organizationTier?: OrganizationTierInfo | null;
   className?: string;
 };
 
@@ -24,6 +27,7 @@ export function DashboardTopnav({
   onToggleSidebar,
   onOpenMobileNav,
   role,
+  organizationTier = null,
   className,
 }: DashboardTopnavProps) {
   const { t } = useLanguage();
@@ -59,6 +63,10 @@ export function DashboardTopnav({
       </Button>
 
       <div className="ml-auto flex items-center gap-1 sm:gap-2">
+        {role === "teacher" ? (
+          <OrganizationTierBadge tier={organizationTier} />
+        ) : null}
+
         {role === "student" ? <LanguageSwitcher /> : null}
 
         <FontSizeToggler

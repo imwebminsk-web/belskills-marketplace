@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import {
+  canManageCourse,
+  hasStaffAccess,
+  loadAuthContext,
+} from "@/lib/auth/access";
 import { readBlockSaveToJournal } from "@/lib/gradebook/journal-utils";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database.types";
@@ -31,15 +36,15 @@ function submissionOutcomeForBlock(
   return { status: "approved", grade: null };
 }
 
-/** teacher_id курса, к которому относится блок урока (для проверки прав преподавателя). */
-async function getCourseTeacherIdForLessonBlock(
+/** Курс, к которому относится блок урока (для проверки прав сотрудника). */
+async function getCourseForLessonBlock(
   supabase: Awaited<ReturnType<typeof createClient>>,
   lessonBlockId: string,
-): Promise<string | null> {
+): Promise<{ organization_id: string | null } | null> {
   const { data, error } = await supabase
     .from("lesson_blocks")
     .select(
-      "lessons!inner(modules!inner(courses!inner(teacher_id)))",
+      "lessons!inner(modules!inner(courses!inner(organization_id)))",
     )
     .eq("id", lessonBlockId)
     .maybeSingle();
@@ -50,11 +55,36 @@ async function getCourseTeacherIdForLessonBlock(
 
   const nested = data as unknown as {
     lessons?: {
-      modules?: { courses?: { teacher_id: string | null } | null } | null;
+      modules?: {
+        courses?: { organization_id: string | null } | null;
+      } | null;
     } | null;
   };
-  const teacherId = nested.lessons?.modules?.courses?.teacher_id;
-  return typeof teacherId === "string" ? teacherId : null;
+  const course = nested.lessons?.modules?.courses;
+  if (!course) {
+    return null;
+  }
+  return {
+    organization_id: course.organization_id ?? null,
+  };
+}
+
+async function canReviewLessonBlock(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  lessonBlockId: string,
+): Promise<boolean> {
+  const { profile, tenants } = await loadAuthContext(userId);
+  if (!profile || !hasStaffAccess(profile, tenants)) {
+    return false;
+  }
+
+  const course = await getCourseForLessonBlock(supabase, lessonBlockId);
+  if (!course) {
+    return false;
+  }
+
+  return canManageCourse(profile, tenants, course);
 }
 
 export type AssignmentSubmissionRow =
@@ -227,13 +257,9 @@ export async function getSubmissionForReview(
     return { success: false, error: "Требуется вход в систему" };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
+  if (!profile) {
     return { success: false, error: "Профиль не найден" };
   }
 
@@ -253,17 +279,13 @@ export async function getSubmissionForReview(
     if (row.student_id !== user.id) {
       return { success: false, error: "Нет доступа к этой сдаче" };
     }
-  } else if (profile.role === "teacher" || profile.role === "admin") {
-    const courseTeacherId = await getCourseTeacherIdForLessonBlock(
+  } else if (hasStaffAccess(profile, tenants)) {
+    const allowed = await canReviewLessonBlock(
       supabase,
+      user.id,
       row.lesson_block_id,
     );
-
-    if (!courseTeacherId) {
-      return { success: false, error: "Не удалось определить курс задания" };
-    }
-
-    if (profile.role !== "admin" && courseTeacherId !== user.id) {
+    if (!allowed) {
       return { success: false, error: "Нет доступа к этой сдаче" };
     }
   } else {
@@ -331,13 +353,9 @@ export async function getSubmissionForReviewByLessonBlock(
     return { success: false, error: "Требуется вход в систему" };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
+  if (!profile) {
     return { success: false, error: "Профиль не найден" };
   }
 
@@ -345,15 +363,13 @@ export async function getSubmissionForReviewByLessonBlock(
     if (studentParsed.data !== user.id) {
       return { success: false, error: "Нет доступа" };
     }
-  } else if (profile.role === "teacher" || profile.role === "admin") {
-    const courseTeacherId = await getCourseTeacherIdForLessonBlock(
+  } else if (hasStaffAccess(profile, tenants)) {
+    const allowed = await canReviewLessonBlock(
       supabase,
+      user.id,
       blockParsed.data,
     );
-    if (!courseTeacherId) {
-      return { success: false, error: "Не удалось определить курс задания" };
-    }
-    if (profile.role !== "admin" && courseTeacherId !== user.id) {
+    if (!allowed) {
       return { success: false, error: "Нет доступа к этому заданию" };
     }
   } else {
@@ -430,17 +446,13 @@ export async function reviewSubmission(
     return { success: false, error: "Требуется вход в систему" };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
+  if (!profile) {
     return { success: false, error: "Профиль не найден" };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (!hasStaffAccess(profile, tenants)) {
     return { success: false, error: "Недостаточно прав" };
   }
 
@@ -454,16 +466,8 @@ export async function reviewSubmission(
     return { success: false, error: "Сдача не найдена" };
   }
 
-  const courseTeacherId = await getCourseTeacherIdForLessonBlock(
-    supabase,
-    sub.lesson_block_id,
-  );
-
-  if (!courseTeacherId) {
-    return { success: false, error: "Не удалось определить курс задания" };
-  }
-
-  if (profile.role !== "admin" && courseTeacherId !== user.id) {
+  const allowed = await canReviewLessonBlock(supabase, user.id, sub.lesson_block_id);
+  if (!allowed) {
     return { success: false, error: "Нет доступа к этой сдаче" };
   }
 

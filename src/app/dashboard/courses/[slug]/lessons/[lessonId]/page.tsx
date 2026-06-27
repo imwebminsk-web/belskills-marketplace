@@ -6,6 +6,8 @@ import {
   type LessonEditorBlockRow,
 } from "@/components/dashboard/teacher/lesson-block-editor";
 import { SiteHeader } from "@/components/site-header";
+import { canManageCourse, hasStaffAccess } from "@/lib/auth/access";
+import { getUserTenantsSafe } from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
 import type { Json } from "@/types/database.types";
 
@@ -45,17 +47,20 @@ export default async function LessonEditorPage({ params }: PageProps) {
     redirect("/login");
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const [{ data: profile, error: profileError }, tenants] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name, is_global_admin")
+      .eq("id", user.id)
+      .maybeSingle(),
+    getUserTenantsSafe(user.id),
+  ]);
 
   if (profileError || !profile) {
     redirect("/login");
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (!hasStaffAccess(profile, tenants)) {
     redirect("/dashboard");
   }
 
@@ -83,15 +88,15 @@ export default async function LessonEditorPage({ params }: PageProps) {
 
   const { data: course, error: courseError } = await supabase
     .from("courses")
-    .select("id, slug, teacher_id, title")
+    .select("id, slug, organization_id, title")
     .eq("id", module.course_id)
     .maybeSingle();
 
   if (
     courseError ||
     !course ||
-    course.teacher_id !== user.id ||
-    course.slug !== decodedSlug
+    course.slug !== decodedSlug ||
+    !canManageCourse(profile, tenants, course)
   ) {
     redirect("/dashboard/courses");
   }

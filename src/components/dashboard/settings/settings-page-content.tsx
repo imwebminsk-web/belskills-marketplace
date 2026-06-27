@@ -2,6 +2,7 @@
 
 import { updateProfileName } from "@/app/actions/profile-actions";
 import { AvatarUpload } from "@/components/dashboard/settings/avatar-upload";
+import { BecomeCreatorSection } from "@/components/dashboard/settings/become-creator-section";
 import { useLanguage } from "@/components/providers/language-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ type SettingsPageContentProps = {
   avatarUrl: string | null;
   displayName: string;
   feedbackKey: "saved" | "empty_name" | "update_failed" | null;
+  staffSchoolName: string | null;
 };
 
 function roleLabel(role: ProfileRole, t: (key: TranslationKey) => string): string {
@@ -50,6 +52,7 @@ export function SettingsPageContent({
   avatarUrl,
   displayName,
   feedbackKey,
+  staffSchoolName,
 }: SettingsPageContentProps) {
   const { t } = useLanguage();
 
@@ -122,7 +125,7 @@ export function SettingsPageContent({
                 <p
                   className={
                     feedbackKey === "saved"
-                      ? "text-sm text-green-600 dark:text-green-500"
+                      ? "text-sm text-brand"
                       : "text-destructive text-sm"
                   }
                 >
@@ -134,6 +137,12 @@ export function SettingsPageContent({
           </CardContent>
         </Card>
       </div>
+
+      {role === "student" || staffSchoolName ? (
+        <div className="px-4 lg:px-6">
+          <BecomeCreatorSection schoolName={staffSchoolName} />
+        </div>
+      ) : null}
     </div>
   );
 }

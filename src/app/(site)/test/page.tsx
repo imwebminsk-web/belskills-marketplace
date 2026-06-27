@@ -26,7 +26,7 @@ function statusBadge(userStatus: "not_started" | "in_progress" | "completed") {
       return (
         <Badge
           variant="outline"
-          className="border-emerald-600/45 bg-emerald-500/12 text-emerald-900 dark:border-emerald-500/50 dark:bg-emerald-500/15 dark:text-emerald-100"
+          className="border-brand/40 bg-brand/10 text-brand dark:border-brand/50 dark:bg-brand/15"
         >
           Пройдено
         </Badge>

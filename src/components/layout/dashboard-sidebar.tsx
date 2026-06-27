@@ -3,12 +3,11 @@
 import type { ComponentType, SVGProps } from "react";
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Settings } from "lucide-react"
+import { CreditCard, ReceiptText, Settings, Wallet } from "lucide-react"
 
 import { signOut } from "@/app/actions/auth-actions"
 import { useLanguage } from "@/components/providers/language-provider"
 import { Badge } from "@/components/ui/badge"
-import { Logo } from "@/components/ui/logo"
 import {
   Avatar,
   AvatarFallback,
@@ -41,6 +40,8 @@ const teacherNav: NavItem[] = [
   { title: "Группы", url: "/dashboard/cohorts", icon: GrowvyGroupsIcon },
   { title: "Ученики", url: "/dashboard/students", icon: GrowvyStudentsIcon },
   { title: "Тесты", url: "/dashboard/tests", icon: GrowvyTestsIcon },
+  { title: "Тарифы", url: "/dashboard/tariffs", icon: CreditCard },
+  { title: "Счета и акты", url: "/dashboard/invoices", icon: ReceiptText },
   { title: "Поддержка", url: "/dashboard/support", icon: GrowvySupportIcon },
 ];
 
@@ -71,6 +72,21 @@ const adminNav: NavItem[] = [
     title: "Справочники",
     url: "/dashboard/admin/taxonomies",
     icon: GrowvyDictionariesIcon,
+  },
+  {
+    title: "Тарифы",
+    url: "/dashboard/admin/tariffs",
+    icon: GrowvyDictionariesIcon,
+  },
+  {
+    title: "Настройки биллинга",
+    url: "/dashboard/admin/settings/billing",
+    icon: CreditCard,
+  },
+  {
+    title: "Счета клиентов",
+    url: "/dashboard/admin/invoices",
+    icon: Wallet,
   },
   { title: "Поддержка", url: "/dashboard/support", icon: GrowvySupportIcon },
 ];
@@ -112,7 +128,7 @@ function NavBadges({
           pendingCount > 0
             ? "bg-yellow-400 text-black"
             : "bg-destructive text-white",
-          active && badgeCount > 0 && pendingCount === 0 && "bg-white text-growvy-primary",
+          active && badgeCount > 0 && pendingCount === 0 && "bg-white text-brand",
         )}
         aria-hidden
       >
@@ -133,7 +149,7 @@ function NavBadges({
           variant="destructive"
           className={cn(
             "min-w-5 justify-center px-1.5 text-[10px] tabular-nums",
-            active && "bg-white text-growvy-primary hover:bg-white",
+            active && "bg-white text-brand hover:bg-white",
           )}
         >
           {badgeCount}
@@ -199,15 +215,20 @@ function DashboardSidebarPanel({
         href="/dashboard"
         onClick={handleNavigate}
         className={cn(
-          "mb-8 flex shrink-0 items-center transition-all",
-          isCollapsed ? "justify-center overflow-hidden px-0" : "px-3",
+          "mb-8 flex shrink-0 items-center transition-all duration-200 ease-in-out",
+          isCollapsed
+            ? "h-8 justify-center overflow-hidden px-0"
+            : "h-[4.5rem] px-3",
         )}
-        title="New Education"
+        title="BelSkills"
       >
-        <Logo
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={isCollapsed ? "/logo2.png" : "/logo.png"}
+          alt="BelSkills"
           className={cn(
-            "max-w-full object-contain",
-            isCollapsed ? "h-14 max-w-[4.5rem]" : "h-[4.5rem]",
+            "shrink-0 object-contain transition-all duration-200 ease-in-out",
+            isCollapsed ? "h-8 w-8" : "h-[4.5rem] max-w-full",
           )}
         />
       </Link>
@@ -231,11 +252,13 @@ function DashboardSidebarPanel({
                   ? "justify-center px-0 py-2.5"
                   : "gap-3 px-3 py-2.5",
                 active
-                  ? "bg-growvy-primary text-white shadow-sm"
+                  ? "bg-brand/10 font-medium text-brand"
                   : "text-muted-foreground hover:bg-growvy-body hover:text-foreground",
               )}
             >
-              <Icon className="size-5 shrink-0" />
+              <Icon
+                className={cn("size-5 shrink-0", active && "text-brand")}
+              />
               {!isCollapsed ? (
                 <span className="flex-1 truncate">{navLabel(item)}</span>
               ) : null}
@@ -262,7 +285,7 @@ function DashboardSidebarPanel({
         >
           <Avatar className="size-9 shrink-0 rounded-full">
             <AvatarImage src={user.avatar} alt={user.name} />
-            <AvatarFallback className="rounded-full bg-growvy-primary/10 text-xs font-semibold text-growvy-primary">
+            <AvatarFallback className="rounded-full bg-brand/10 text-xs font-semibold text-brand">
               {initialsFromName(user.name)}
             </AvatarFallback>
           </Avatar>
@@ -288,14 +311,42 @@ function DashboardSidebarPanel({
               ? "justify-center px-0 py-2.5"
               : "gap-3 px-3 py-2.5",
             pathname.startsWith("/dashboard/settings")
-              ? "bg-growvy-primary text-white"
+              ? "bg-brand/10 font-medium text-brand"
               : "text-muted-foreground hover:bg-growvy-body hover:text-foreground",
           )}
         >
-          <Settings className="size-5 shrink-0" aria-hidden />
+          <Settings
+            className={cn(
+              "size-5 shrink-0",
+              pathname.startsWith("/dashboard/settings") && "text-brand",
+            )}
+          />
           {!isCollapsed ? (
             <span>{role === "student" ? t("nav.settings") : "Настройки"}</span>
           ) : null}
+        </Link>
+
+        <Link
+          href="/onboarding"
+          onClick={handleNavigate}
+          title="Create new school"
+          className={cn(
+            "flex items-center rounded-xl text-sm font-medium transition-colors",
+            isCollapsed
+              ? "justify-center px-0 py-2.5"
+              : "gap-3 px-3 py-2.5",
+            pathname.startsWith("/onboarding")
+              ? "bg-brand/10 font-medium text-brand"
+              : "text-muted-foreground hover:bg-growvy-body hover:text-foreground",
+          )}
+        >
+          <GrowvyCoursesIcon
+            className={cn(
+              "size-5 shrink-0",
+              pathname.startsWith("/onboarding") && "text-brand",
+            )}
+          />
+          {!isCollapsed ? <span>Create new school</span> : null}
         </Link>
 
         <form action={signOut} className="w-full">

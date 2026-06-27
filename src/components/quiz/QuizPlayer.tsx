@@ -674,7 +674,7 @@ export function QuizPlayer({
                 variant={isActive ? "default" : "outline"}
                 className={cn(
                   "min-h-11 min-w-11 px-2 tabular-nums sm:min-h-9 sm:min-w-9",
-                  isSubmitted && !isActive && "border-emerald-500/40",
+                  isSubmitted && !isActive && "border-brand/40",
                 )}
                 onClick={() => goToTask(index)}
                 aria-current={isActive ? "step" : undefined}
@@ -704,7 +704,7 @@ export function QuizPlayer({
         {isCurrentSubmitted ? (
           <Badge
             variant="secondary"
-            className="w-fit border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+            className="w-fit border-brand/30 bg-brand/15 text-brand"
           >
             {t("quiz.answerSentBadge")}
           </Badge>

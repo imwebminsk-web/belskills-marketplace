@@ -4,9 +4,8 @@ import { type NextRequest, NextResponse } from "next/server";
 import type { Database } from "@/types/database.types";
 
 /**
- * Обновляет сессию Supabase на edge: читает куки из запроса и записывает
- * обновлённые куки в ответ. Вызывайте из корневого `middleware.ts`, чтобы
- * один запрос обновлял refresh token до параллельных Server Components/RSC.
+ * Обновляет сессию Supabase на edge и выполняет только проверку аутентификации.
+ * Глобальные роли (admin/teacher) и tenant-авторизация — на уровне layout/page.
  */
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({

@@ -8,6 +8,10 @@ import {
 import { StudentSupportClient } from "@/components/dashboard/support/student-support-client";
 import { TeacherSupportClient } from "@/components/dashboard/support/teacher-support-client";
 import { SiteHeader } from "@/components/site-header";
+import {
+  getUserTenantsSafe,
+  resolveDashboardShellRole,
+} from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
@@ -25,22 +29,27 @@ export default async function SupportPage() {
     redirect("/login");
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const [{ data: profile, error: profileError }, tenants] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name, is_global_admin")
+      .eq("id", user.id)
+      .maybeSingle(),
+    getUserTenantsSafe(user.id),
+  ]);
 
   if (profileError || !profile) {
     redirect("/login");
   }
+
+  const shellRole = resolveDashboardShellRole(profile.is_global_admin, tenants);
 
   const displayName =
     profile.full_name?.trim() ||
     user.email?.split("@")[0] ||
     "Пользователь";
 
-  if (profile.role === "student") {
+  if (shellRole === "student") {
     const ticketsRes = await getStudentTickets();
     if (!ticketsRes.success) {
       throw new Error(ticketsRes.error);
@@ -59,7 +68,7 @@ export default async function SupportPage() {
     );
   }
 
-  if (profile.role === "teacher" || profile.role === "admin") {
+  if (shellRole === "teacher" || shellRole === "admin") {
     const ticketsRes = await getAllSupportTickets("open");
     if (!ticketsRes.success) {
       throw new Error(ticketsRes.error);

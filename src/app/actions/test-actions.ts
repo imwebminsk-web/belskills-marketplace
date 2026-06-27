@@ -41,6 +41,13 @@ import {
   resolveOrderingPlayerView,
   sumOrderingItemPoints,
 } from "@/lib/ordering-utils";
+import {
+  hasStaffAccess,
+  isGlobalAdmin,
+  loadAuthContext,
+  type GateProfile,
+} from "@/lib/auth/access";
+import type { UserTenant } from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
 import { resolveStudentFacingTestTitle } from "@/lib/learn/student-test-title";
 import {
@@ -93,13 +100,12 @@ import type { Database, Json, Tables } from "@/types/database.types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
-type ProfileRole = Database["public"]["Enums"]["profile_role"];
-
 const testIdSchema = z.string().uuid("Некорректный ID теста");
 
 type TestAccessContext = {
   userId: string | null;
-  role: ProfileRole | null;
+  profile: GateProfile | null;
+  tenants: UserTenant[];
 };
 
 type TestQuestionsFetchFailure = {
@@ -175,26 +181,22 @@ async function resolveTestAccessContext(
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return { userId: null, role: null };
+    return { userId: null, profile: null, tenants: [] };
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  return { userId: user.id, role: profile?.role ?? null };
+  return { userId: user.id, profile, tenants };
 }
 
 function canViewUnpublishedTest(
   access: TestAccessContext,
   testUserId: string | null,
 ): boolean {
-  if (!access.userId) {
+  if (!access.userId || !access.profile) {
     return false;
   }
-  if (access.role === "admin") {
+  if (isGlobalAdmin(access.profile)) {
     return true;
   }
   return testUserId !== null && testUserId === access.userId;
@@ -204,13 +206,16 @@ function canViewCorrectAnswers(
   access: TestAccessContext,
   testUserId: string | null,
 ): boolean {
-  if (!access.userId) {
+  if (!access.userId || !access.profile) {
     return false;
   }
-  if (access.role === "admin") {
+  if (isGlobalAdmin(access.profile)) {
     return true;
   }
-  return access.role === "teacher" && testUserId === access.userId;
+  return (
+    hasStaffAccess(access.profile, access.tenants) &&
+    testUserId === access.userId
+  );
 }
 
 function assertPublishedTestReadable(
@@ -668,27 +673,24 @@ export async function getTests(): Promise<
     data: { user },
   } = await supabase.auth.getUser();
 
-  let role: ProfileRole | null = null;
-  if (user) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .maybeSingle();
-    role = profile?.role ?? null;
-  }
-
   let testsQuery = supabase
     .from("tests")
     .select("id, title, description, folder_name")
     .order("created_at", { ascending: false });
 
-  if (!user || role === "student") {
+  if (!user) {
     testsQuery = testsQuery.eq("is_published", true);
-  } else if (role === "teacher") {
-    testsQuery = testsQuery.or(
-      `is_published.eq.true,user_id.eq.${user.id}`,
-    );
+  } else {
+    const { profile, tenants } = await loadAuthContext(user.id);
+    if (isGlobalAdmin(profile)) {
+      // без фильтра — глобальный админ видит все тесты
+    } else if (hasStaffAccess(profile, tenants)) {
+      testsQuery = testsQuery.or(
+        `is_published.eq.true,user_id.eq.${user.id}`,
+      );
+    } else {
+      testsQuery = testsQuery.eq("is_published", true);
+    }
   }
 
   const { data: tests, error: testsError } = await testsQuery;
@@ -886,17 +888,9 @@ export async function duplicateTest(
     return { success: false, error: "Требуется войти в систему" };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
-    return { success: false, error: forbiddenMessage };
-  }
-
-  if (profile.role !== "admin" && profile.role !== "teacher") {
+  if (!profile || !hasStaffAccess(profile, tenants)) {
     return { success: false, error: forbiddenMessage };
   }
 
@@ -934,7 +928,7 @@ export async function duplicateTest(
     };
   }
 
-  if (profile.role !== "admin" && sourceTest.user_id !== user.id) {
+  if (!isGlobalAdmin(profile) && sourceTest.user_id !== user.id) {
     return {
       success: false,
       error: "Вы можете копировать только свои тесты.",
@@ -1229,17 +1223,9 @@ export async function resetAndCreatePreviewAttempt(
     };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
-    return { success: false, error: forbiddenMessage };
-  }
-
-  if (profile.role !== "admin" && profile.role !== "teacher") {
+  if (!profile || !hasStaffAccess(profile, tenants)) {
     return { success: false, error: forbiddenMessage };
   }
 
@@ -1259,7 +1245,7 @@ export async function resetAndCreatePreviewAttempt(
     return { success: false, error: "Тест не найден" };
   }
 
-  if (profile.role !== "admin" && testRow.user_id !== user.id) {
+  if (!isGlobalAdmin(profile) && testRow.user_id !== user.id) {
     return { success: false, error: forbiddenMessage };
   }
 
@@ -3169,17 +3155,9 @@ export async function getTestDraftForEdit(
     return { success: false, error: "Требуется войти в систему" };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
-    return { success: false, error: forbiddenMessage };
-  }
-
-  if (profile.role !== "admin" && profile.role !== "teacher") {
+  if (!profile || !hasStaffAccess(profile, tenants)) {
     return { success: false, error: forbiddenMessage };
   }
 
@@ -3225,7 +3203,7 @@ export async function getTestDraftForEdit(
     return { success: false, error: error.message };
   }
 
-  if (profile.role !== "admin" && data.user_id !== user.id) {
+  if (!isGlobalAdmin(profile) && data.user_id !== user.id) {
     return {
       success: false,
       error: "Вы можете редактировать только свои тесты.",
@@ -3291,17 +3269,8 @@ export async function updateFullTest(
     return { success: false, error: "Требуется войти в систему" };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (profileError || !profile) {
-    return { success: false, error: forbiddenMessage };
-  }
-
-  if (profile.role !== "admin" && profile.role !== "teacher") {
+  const { profile, tenants } = await loadAuthContext(user.id);
+  if (!profile || !hasStaffAccess(profile, tenants)) {
     return { success: false, error: forbiddenMessage };
   }
 
@@ -3337,7 +3306,7 @@ export async function updateFullTest(
     };
   }
 
-  if (profile.role !== "admin" && testRow.user_id !== user.id) {
+  if (!isGlobalAdmin(profile) && testRow.user_id !== user.id) {
     return {
       success: false,
       error: "Вы можете редактировать только свои тесты.",
@@ -3469,17 +3438,9 @@ export async function saveFullTest(
     return { success: false, error: "Требуется войти в систему" };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
-    return { success: false, error: forbiddenMessage };
-  }
-
-  if (profile.role !== "admin" && profile.role !== "teacher") {
+  if (!profile || !hasStaffAccess(profile, tenants)) {
     return { success: false, error: forbiddenMessage };
   }
 

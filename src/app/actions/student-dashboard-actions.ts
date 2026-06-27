@@ -9,6 +9,12 @@ import {
   readBlockSaveToJournal,
 } from "@/lib/gradebook/journal-utils";
 import { clampScorePercent } from "@/lib/utils/grading";
+import {
+  canManageCourse,
+  hasStaffAccess,
+  isGlobalAdmin,
+  loadAuthContext,
+} from "@/lib/auth/access";
 import { createClient } from "@/lib/supabase/server";
 import type { Json } from "@/types/database.types";
 
@@ -582,17 +588,13 @@ export async function getStudentProgress(
     return { success: false, error: "Требуется вход в систему" };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
+  if (!profile) {
     return { success: false, error: "Профиль не найден" };
   }
 
-  if (profile.role !== "admin" && user.id !== parsed.data) {
+  if (!isGlobalAdmin(profile) && user.id !== parsed.data) {
     return { success: false, error: "Нет доступа к чужому прогрессу" };
   }
 
@@ -642,23 +644,19 @@ export async function getStudentProgressForTeacher(
     return { success: false, error: "Требуется вход в систему" };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
+  if (!profile) {
     return { success: false, error: "Профиль не найден" };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (!hasStaffAccess(profile, tenants)) {
     return { success: false, error: "Нет доступа" };
   }
 
   const { data: cohort, error: cohortError } = await supabase
     .from("cohorts")
-    .select("id, name, course_id, courses(id, title, slug, teacher_id)")
+    .select("id, name, course_id, courses(id, title, slug, organization_id)")
     .eq("id", parsedCohort.data)
     .maybeSingle();
 
@@ -671,7 +669,7 @@ export async function getStudentProgressForTeacher(
     return { success: false, error: "Курс не найден" };
   }
 
-  if (courseRel.teacher_id !== user.id) {
+  if (!canManageCourse(profile, tenants, courseRel)) {
     return { success: false, error: "Нет доступа к журналу этой группы" };
   }
 
@@ -736,17 +734,13 @@ export async function getStudentDashboardCourses(
     return { success: false, error: "Требуется вход в систему" };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
+  if (!profile) {
     return { success: false, error: "Профиль не найден" };
   }
 
-  if (profile.role !== "admin" && user.id !== parsed.data) {
+  if (!isGlobalAdmin(profile) && user.id !== parsed.data) {
     return { success: false, error: "Нет доступа к чужим данным" };
   }
 

@@ -79,7 +79,7 @@ export function CohortStudentsList({
               <TableCell>
                 <Badge
                   variant="outline"
-                  className="border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+                  className="border-brand/40 bg-brand/10 text-brand"
                 >
                   Активен
                 </Badge>

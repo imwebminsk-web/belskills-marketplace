@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import {
+  canManageCourse,
+  loadAuthContext,
+} from "@/lib/auth/access";
 import { createClient } from "@/lib/supabase/server";
 import type {
   LessonBlockActionState,
@@ -62,6 +66,9 @@ async function getLessonOwnerSlug(
   userId: string,
   lessonId: string,
 ): Promise<string | null> {
+  const { profile, tenants } = await loadAuthContext(userId);
+  if (!profile) return null;
+
   const { data: lesson, error: le } = await supabase
     .from("lessons")
     .select("id, module_id")
@@ -78,10 +85,12 @@ async function getLessonOwnerSlug(
 
   const { data: course, error: ce } = await supabase
     .from("courses")
-    .select("slug, teacher_id")
+    .select("slug, organization_id")
     .eq("id", mod.course_id)
     .maybeSingle();
-  if (ce || !course || course.teacher_id !== userId) return null;
+  if (ce || !course || !canManageCourse(profile, tenants, course)) {
+    return null;
+  }
   return course.slug;
 }
 

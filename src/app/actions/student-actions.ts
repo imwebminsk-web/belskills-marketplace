@@ -2,6 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 
+import {
+  getStaffOrganizationIds,
+  hasStaffAccess,
+  isGlobalAdmin,
+  loadAuthContext,
+} from "@/lib/auth/access";
 import { createClient } from "@/lib/supabase/server";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 
@@ -26,9 +32,6 @@ type EnrollmentRow = {
   cohorts: {
     id: string;
     name: string;
-    courses: {
-      teacher_id: string;
-    } | null;
   } | null;
 };
 
@@ -43,11 +46,15 @@ function readEmailRowUserId(row: EmailRpcRow): string | null {
   return typeof userId === "string" && userId.length > 0 ? userId : null;
 }
 
-async function assertTeacherAccess(
+async function assertStaffStudentsAccess(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  teacherId: string,
 ): Promise<
-  | { ok: true; userId: string }
+  | {
+      ok: true;
+      userId: string;
+      profile: NonNullable<Awaited<ReturnType<typeof loadAuthContext>>["profile"]>;
+      tenants: Awaited<ReturnType<typeof loadAuthContext>>["tenants"];
+    }
   | { ok: false; error: string }
 > {
   const {
@@ -58,46 +65,66 @@ async function assertTeacherAccess(
     return { ok: false, error: "Нужна авторизация." };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
+  if (!profile) {
     return { ok: false, error: "Профиль не найден." };
   }
 
-  if (profile.role !== "admin" && user.id !== teacherId) {
+  if (!hasStaffAccess(profile, tenants)) {
     return { ok: false, error: "Нет доступа к списку учеников." };
   }
 
-  return { ok: true, userId: user.id };
+  return { ok: true, userId: user.id, profile, tenants };
 }
 
 async function getTeacherCohortIds(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  teacherId: string,
+  userId: string,
+  profile: NonNullable<Awaited<ReturnType<typeof loadAuthContext>>["profile"]>,
+  tenants: Awaited<ReturnType<typeof loadAuthContext>>["tenants"],
 ): Promise<string[]> {
-  const { data: courses, error: coursesError } = await supabase
-    .from("courses")
-    .select("id")
-    .eq("teacher_id", teacherId);
+  const courseIds = new Set<string>();
 
-  if (coursesError) {
-    console.error("[getTeacherCohortIds] courses", coursesError.message);
-    return [];
+  if (isGlobalAdmin(profile)) {
+    const { data: allCourses, error: allCoursesError } = await supabase
+      .from("courses")
+      .select("id");
+
+    if (allCoursesError) {
+      console.error("[getTeacherCohortIds] all courses", allCoursesError.message);
+      return [];
+    }
+
+    for (const course of allCourses ?? []) {
+      courseIds.add(course.id);
+    }
+  } else {
+    const orgIds = getStaffOrganizationIds(tenants);
+    if (orgIds.length > 0) {
+      const { data: orgCourses, error: orgCoursesError } = await supabase
+        .from("courses")
+        .select("id")
+        .in("organization_id", orgIds);
+
+      if (orgCoursesError) {
+        console.error("[getTeacherCohortIds] org courses", orgCoursesError.message);
+      } else {
+        for (const course of orgCourses ?? []) {
+          courseIds.add(course.id);
+        }
+      }
+    }
   }
 
-  const courseIds = (courses ?? []).map((course) => course.id);
-  if (courseIds.length === 0) {
+  if (courseIds.size === 0) {
     return [];
   }
 
   const { data: cohorts, error: cohortsError } = await supabase
     .from("cohorts")
     .select("id")
-    .in("course_id", courseIds);
+    .in("course_id", [...courseIds]);
 
   if (cohortsError) {
     console.error("[getTeacherCohortIds] cohorts", cohortsError.message);
@@ -111,20 +138,26 @@ async function getTeacherCohortIds(
  * Все уникальные ученики, записанные в группы курсов преподавателя.
  */
 export async function getGlobalTeacherStudents(
-  teacherId: string,
+  _teacherId: string,
 ): Promise<
   | { success: true; students: GlobalTeacherStudent[] }
   | { success: false; error: string }
 > {
-  const tid = teacherId.trim();
-  if (!tid) {
-    return { success: false, error: "Не указан преподаватель." };
-  }
-
   const supabase = await createClient();
-  const access = await assertTeacherAccess(supabase, tid);
+  const access = await assertStaffStudentsAccess(supabase);
   if (!access.ok) {
     return { success: false, error: access.error };
+  }
+
+  const cohortIds = await getTeacherCohortIds(
+    supabase,
+    access.userId,
+    access.profile,
+    access.tenants,
+  );
+
+  if (cohortIds.length === 0) {
+    return { success: true, students: [] };
   }
 
   const { data: rows, error } = await supabase
@@ -136,14 +169,11 @@ export async function getGlobalTeacherStudents(
       cohort_id,
       cohorts!inner(
         id,
-        name,
-        courses!inner(
-          teacher_id
-        )
+        name
       )
     `,
     )
-    .eq("cohorts.courses.teacher_id", tid);
+    .in("cohort_id", cohortIds);
 
   if (error) {
     console.error("[getGlobalTeacherStudents]", error.message);
@@ -287,21 +317,19 @@ export async function unenrollStudentFromCohorts(
     return { success: false, error: "Нужна авторизация." };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
+  if (!profile) {
     return { success: false, error: "Профиль не найден." };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (!hasStaffAccess(profile, tenants)) {
     return { success: false, error: "Нет прав на отчисление." };
   }
 
-  const teacherCohortIds = new Set(await getTeacherCohortIds(supabase, user.id));
+  const teacherCohortIds = new Set(
+    await getTeacherCohortIds(supabase, user.id, profile, tenants),
+  );
   const unauthorized = normalizedCohortIds.filter(
     (cohortId) => !teacherCohortIds.has(cohortId),
   );

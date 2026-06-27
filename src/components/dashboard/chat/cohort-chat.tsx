@@ -34,7 +34,7 @@ import { initialsFromDisplayName } from "@/lib/utils/user-utils";
 type CohortChatProps = {
   cohortId: string;
   currentUserId: string;
-  teacherId: string;
+  staffUserIds: string[];
   isChatEnabled: boolean;
   isTeacher: boolean;
   title?: string;
@@ -89,7 +89,7 @@ function formatMessageDate(dateString: string): string {
 export function CohortChat({
   cohortId,
   currentUserId,
-  teacherId,
+  staffUserIds,
   isChatEnabled,
   isTeacher,
   title = DEFAULT_CHAT_TITLE,
@@ -258,7 +258,7 @@ export function CohortChat({
           ) : (
             messages.map((message) => {
               const isOwn = message.userId === currentUserId;
-              const isTeacherMessage = message.userId === teacherId;
+              const isTeacherMessage = staffUserIds.includes(message.userId);
               return (
                 <div
                   key={message.id}

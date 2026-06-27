@@ -2,6 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 
+import {
+  canManageCourse,
+  hasStaffAccess,
+  isGlobalAdmin,
+  loadAuthContext,
+} from "@/lib/auth/access";
 import { createClient } from "@/lib/supabase/server";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 
@@ -158,7 +164,7 @@ export async function sendChatMessage(
 
   const { data: cohort, error: cohortError } = await supabase
     .from("cohorts")
-    .select("id, is_chat_enabled, courses(teacher_id)")
+    .select("id, is_chat_enabled, courses(organization_id)")
     .eq("id", cid)
     .maybeSingle();
 
@@ -169,17 +175,15 @@ export async function sendChatMessage(
   const courseRel = Array.isArray(cohort.courses)
     ? cohort.courses[0]
     : cohort.courses;
-  const isCourseTeacher = courseRel?.teacher_id === user.id;
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile, tenants } = await loadAuthContext(user.id);
+  const canManageCourseChat =
+    profile != null &&
+    courseRel != null &&
+    canManageCourse(profile, tenants, courseRel);
+  const isAdmin = isGlobalAdmin(profile);
 
-  const isAdmin = profile?.role === "admin";
-
-  if (!cohort.is_chat_enabled && !isCourseTeacher && !isAdmin) {
+  if (!cohort.is_chat_enabled && !canManageCourseChat && !isAdmin) {
     return { success: false, error: "Чат отключен" };
   }
 
@@ -237,18 +241,13 @@ export async function deleteChatMessage(
     return { success: false, error: "Сообщение не найдено." };
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const isAdmin = profile?.role === "admin";
+  const { profile, tenants } = await loadAuthContext(user.id);
+  const isAdmin = isGlobalAdmin(profile);
 
   if (!isAdmin) {
     const { data: cohort, error: cohortError } = await supabase
       .from("cohorts")
-      .select("id, courses(teacher_id)")
+      .select("id, courses(organization_id)")
       .eq("id", message.cohort_id)
       .maybeSingle();
 
@@ -260,7 +259,11 @@ export async function deleteChatMessage(
       ? cohort.courses[0]
       : cohort.courses;
 
-    if (courseRel?.teacher_id !== user.id) {
+    if (
+      !profile ||
+      !courseRel ||
+      !canManageCourse(profile, tenants, courseRel)
+    ) {
       return { success: false, error: "Нет прав на удаление сообщения." };
     }
   }

@@ -11,8 +11,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
+import { hasStaffAccess } from "@/lib/auth/access";
+import { getUserTenantsSafe } from "@/lib/auth/tenant";
+import { createClient } from "@/lib/supabase/server";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -37,17 +39,20 @@ export default async function DashboardTestEditPage({ params }: PageProps) {
     );
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const [{ data: profile, error: profileError }, tenants] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("is_global_admin")
+      .eq("id", user.id)
+      .maybeSingle(),
+    getUserTenantsSafe(user.id),
+  ]);
 
   if (profileError || !profile) {
     redirect("/dashboard");
   }
 
-  if (profile.role !== "admin" && profile.role !== "teacher") {
+  if (!hasStaffAccess(profile, tenants)) {
     redirect("/dashboard");
   }
 

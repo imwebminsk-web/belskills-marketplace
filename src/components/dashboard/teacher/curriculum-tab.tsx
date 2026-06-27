@@ -363,7 +363,7 @@ export function CurriculumTab({
                         {lesson.is_published ? (
                           <Badge
                             variant="outline"
-                            className="shrink-0 border-emerald-500/40 bg-emerald-500/10 text-xs text-emerald-800 dark:text-emerald-200"
+                            className="shrink-0 border-brand/40 bg-brand/10 text-xs text-brand"
                           >
                             Опубликован
                           </Badge>

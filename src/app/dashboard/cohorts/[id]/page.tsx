@@ -15,6 +15,8 @@ import { MatrixGradebook } from "@/components/dashboard/teacher/cohorts/matrix-g
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/site-header";
+import { canManageCourse, getOrganizationStaffUserIds, hasStaffAccess } from "@/lib/auth/access";
+import { getUserTenantsSafe } from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
 
 type CohortPageProps = {
@@ -56,24 +58,27 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
     redirect("/login");
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const [{ data: profile, error: profileError }, tenants] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name, is_global_admin")
+      .eq("id", user.id)
+      .maybeSingle(),
+    getUserTenantsSafe(user.id),
+  ]);
 
   if (profileError || !profile) {
     redirect("/login");
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (!hasStaffAccess(profile, tenants)) {
     redirect("/dashboard");
   }
 
   const { data: cohort, error: cohortError } = await supabase
     .from("cohorts")
     .select(
-      "id, name, pin_code, is_active, is_chat_enabled, created_at, course_id, courses(id, title, teacher_id)",
+      "id, name, pin_code, is_active, is_chat_enabled, created_at, course_id, courses(id, title, organization_id)",
     )
     .eq("id", cohortId)
     .maybeSingle();
@@ -87,7 +92,9 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
     notFound();
   }
 
-  if (courseRel.teacher_id !== user.id) {
+  if (
+    !canManageCourse(profile, tenants, courseRel)
+  ) {
     redirect("/dashboard/cohorts");
   }
 
@@ -192,7 +199,7 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
               {cohort.is_active ? (
                 <Badge
                   variant="outline"
-                  className="border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+                  className="border-brand/40 bg-brand/10 text-brand"
                 >
                   Набор открыт
                 </Badge>
@@ -262,12 +269,16 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
     </>
   );
 
+  const staffUserIds = courseRel.organization_id
+    ? await getOrganizationStaffUserIds(courseRel.organization_id)
+    : [];
+
   const chatNode = (
     <CohortChat
       key={cohort.id}
       cohortId={cohort.id}
       currentUserId={user.id}
-      teacherId={courseRel.teacher_id}
+      staffUserIds={staffUserIds}
       isChatEnabled={cohort.is_chat_enabled}
       isTeacher
       description="Общение с учениками группы в реальном времени."

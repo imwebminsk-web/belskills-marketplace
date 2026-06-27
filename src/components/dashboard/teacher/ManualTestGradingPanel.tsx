@@ -212,7 +212,7 @@ export function ManualTestGradingPanel({
           className={cn(
             "w-full sm:w-auto",
             gradesSaved &&
-              "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-600",
+              "bg-brand text-brand-foreground hover:bg-brand/90",
           )}
           onClick={handleSubmit}
           disabled={isPending || gradesSaved}

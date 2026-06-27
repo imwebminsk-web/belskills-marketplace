@@ -32,7 +32,7 @@ function statusBadge(
       return (
         <Badge
           variant="outline"
-          className="border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+          className="border-brand/40 bg-brand/10 text-brand"
         >
           {t("lesson_view.statusApproved")}
         </Badge>
@@ -168,7 +168,7 @@ export function AssignmentSheetLayout(props: AssignmentSheetLayoutProps) {
                 type="button"
                 disabled={props.isPending}
                 onClick={props.onApprove}
-                className="border-emerald-600/30 bg-emerald-600 text-white hover:bg-emerald-600/90 dark:border-emerald-500/40 dark:bg-emerald-600 dark:hover:bg-emerald-600/90"
+                className="bg-brand text-brand-foreground hover:bg-brand/90"
               >
                 {props.isPending ? "Сохранение…" : "Принять"}
               </Button>

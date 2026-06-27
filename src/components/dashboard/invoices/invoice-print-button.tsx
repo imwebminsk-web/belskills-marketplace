@@ -1,0 +1,17 @@
+"use client";
+
+import { Button } from "@/components/ui/button";
+
+export function InvoicePrintButton() {
+  return (
+    <div className="no-print fixed right-6 bottom-6 z-50">
+      <Button
+        type="button"
+        onClick={() => window.print()}
+        className="bg-brand text-brand-foreground hover:bg-brand/90 shadow-lg"
+      >
+        Скачать счет
+      </Button>
+    </div>
+  );
+}

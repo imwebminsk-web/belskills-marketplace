@@ -179,7 +179,7 @@ function MatrixCell({
         className={cn(
           "inline-flex size-full min-h-8 items-center justify-center rounded-sm font-medium tabular-nums hover:bg-muted/60",
           pass
-            ? "text-emerald-600 dark:text-emerald-400"
+            ? "text-brand"
             : "text-red-600 dark:text-red-400",
         )}
       >

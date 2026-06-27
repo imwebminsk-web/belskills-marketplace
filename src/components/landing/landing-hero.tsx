@@ -17,7 +17,7 @@ export function LandingHero() {
         <div className="order-1 space-y-6 lg:order-2">
           <Badge
             variant="secondary"
-            className="w-fit border-amber-500/40 bg-amber-500/15 text-amber-950 dark:bg-amber-500/20 dark:text-amber-100"
+            className="w-fit border-accent/40 bg-accent/15 text-accent dark:bg-accent/20 dark:text-accent-foreground"
           >
             Английский БЕЗ ДОМАШКИ — новинка!
           </Badge>

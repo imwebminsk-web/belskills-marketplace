@@ -43,7 +43,7 @@ export function JournalPointsDisplay({
       className={cn(
         "font-medium tabular-nums",
         pass
-          ? "text-emerald-600 dark:text-emerald-400"
+            ? "text-brand"
           : "text-red-600 dark:text-red-400",
         className,
       )}

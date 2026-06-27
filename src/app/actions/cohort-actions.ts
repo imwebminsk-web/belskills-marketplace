@@ -5,6 +5,10 @@ import { randomInt } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import {
+  canManageCourse,
+  loadAuthContext,
+} from "@/lib/auth/access";
 import { createClient } from "@/lib/supabase/server";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 
@@ -73,9 +77,14 @@ export async function createCohort(
     return { success: false, error: "Нужна авторизация." };
   }
 
+  const { profile, tenants } = await loadAuthContext(user.id);
+  if (!profile) {
+    return { success: false, error: "Профиль не найден." };
+  }
+
   const { data: course, error: courseError } = await supabase
     .from("courses")
-    .select("id, teacher_id")
+    .select("id, organization_id")
     .eq("id", cid)
     .maybeSingle();
 
@@ -83,7 +92,7 @@ export async function createCohort(
     return { success: false, error: "Курс не найден." };
   }
 
-  if (course.teacher_id !== user.id) {
+  if (!canManageCourse(profile, tenants, course)) {
     return { success: false, error: "Нет прав на создание группы для этого курса." };
   }
 
@@ -155,9 +164,14 @@ export async function updateCohortStatus(
     return { success: false, error: "Группа не найдена." };
   }
 
+  const { profile, tenants } = await loadAuthContext(user.id);
+  if (!profile) {
+    return { success: false, error: "Профиль не найден." };
+  }
+
   const { data: course, error: courseError } = await supabase
     .from("courses")
-    .select("id, teacher_id")
+    .select("id, organization_id")
     .eq("id", cohort.course_id)
     .maybeSingle();
 
@@ -165,7 +179,7 @@ export async function updateCohortStatus(
     return { success: false, error: "Курс группы не найден." };
   }
 
-  if (course.teacher_id !== user.id) {
+  if (!canManageCourse(profile, tenants, course)) {
     return { success: false, error: "Нет прав на изменение статуса этой группы." };
   }
 
@@ -292,6 +306,11 @@ async function validateTeacherOwnsCohort(cohortId: string): Promise<
     return { ok: false, error: "Нужна авторизация." };
   }
 
+  const { profile, tenants } = await loadAuthContext(user.id);
+  if (!profile) {
+    return { ok: false, error: "Профиль не найден." };
+  }
+
   const { data: cohort, error: cohortError } = await supabase
     .from("cohorts")
     .select("id, course_id")
@@ -304,7 +323,7 @@ async function validateTeacherOwnsCohort(cohortId: string): Promise<
 
   const { data: course, error: courseError } = await supabase
     .from("courses")
-    .select("id, teacher_id")
+    .select("id, organization_id")
     .eq("id", cohort.course_id)
     .maybeSingle();
 
@@ -312,7 +331,7 @@ async function validateTeacherOwnsCohort(cohortId: string): Promise<
     return { ok: false, error: "Курс группы не найден." };
   }
 
-  if (course.teacher_id !== user.id) {
+  if (!canManageCourse(profile, tenants, course)) {
     return { ok: false, error: "Нет прав на изменение назначений этой группы." };
   }
 

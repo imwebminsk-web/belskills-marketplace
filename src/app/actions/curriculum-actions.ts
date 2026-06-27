@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import {
+  canManageCourse,
+  loadAuthContext,
+} from "@/lib/auth/access";
 import { createClient } from "@/lib/supabase/server";
 import { createLessonSchema } from "@/lib/validations/curriculum-schema";
 import type { Database, Json } from "@/types/database.types";
@@ -18,6 +22,43 @@ type DbClient = SupabaseClient<Database>;
 
 const BUCKET_COVERS = "course-covers";
 const BUCKET_VIDEOS = "course-videos";
+
+type CourseAccessRow = {
+  id: string;
+  slug: string;
+  organization_id: string | null;
+};
+
+async function loadCourseWithManageAccess(
+  supabase: DbClient,
+  userId: string,
+  courseId: string,
+): Promise<
+  | { ok: true; course: CourseAccessRow }
+  | { ok: false; error: string }
+> {
+  const { profile, tenants } = await loadAuthContext(userId);
+
+  if (!profile) {
+    return { ok: false, error: "Профиль не найден." };
+  }
+
+  const { data: course, error } = await supabase
+    .from("courses")
+    .select("id, organization_id, slug")
+    .eq("id", courseId)
+    .maybeSingle();
+
+  if (error || !course) {
+    return { ok: false, error: "Курс не найден или нет прав." };
+  }
+
+  if (!canManageCourse(profile, tenants, course)) {
+    return { ok: false, error: "Курс не найден или нет прав." };
+  }
+
+  return { ok: true, course };
+}
 
 function nextOrderIndex(max: number | null | undefined): number {
   return (max ?? -1) + 1;
@@ -127,15 +168,11 @@ export async function createModule(
     return { error: "Нужна авторизация." };
   }
 
-  const { data: course, error: courseError } = await supabase
-    .from("courses")
-    .select("id, teacher_id, slug")
-    .eq("id", courseId)
-    .maybeSingle();
-
-  if (courseError || !course || course.teacher_id !== user.id) {
-    return { error: "Курс не найден или нет прав." };
+  const access = await loadCourseWithManageAccess(supabase, user.id, courseId);
+  if (!access.ok) {
+    return { error: access.error };
   }
+  const course = access.course;
 
   const { data: lastRow } = await supabase
     .from("modules")
@@ -208,20 +245,15 @@ export async function createLesson(
     return { error: "Модуль не принадлежит этому курсу." };
   }
 
-  const { data: course, error: courseError } = await supabase
-    .from("courses")
-    .select("id, teacher_id, slug")
-    .eq("id", module.course_id)
-    .maybeSingle();
-
-  if (
-    courseError ||
-    !course ||
-    course.id !== courseIdFromForm ||
-    course.teacher_id !== user.id
-  ) {
+  const access = await loadCourseWithManageAccess(
+    supabase,
+    user.id,
+    module.course_id,
+  );
+  if (!access.ok || access.course.id !== courseIdFromForm) {
     return { error: "Нет прав на добавление урока в этот модуль." };
   }
+  const course = access.course;
 
   const { data: lastLesson } = await supabase
     .from("lessons")
@@ -322,15 +354,15 @@ export async function updateLesson(
     return { error: "Модуль не найден." };
   }
 
-  const { data: course, error: courseErr } = await supabase
-    .from("courses")
-    .select("id, teacher_id, slug")
-    .eq("id", module.course_id)
-    .maybeSingle();
-
-  if (courseErr || !course || course.teacher_id !== user.id) {
+  const access = await loadCourseWithManageAccess(
+    supabase,
+    user.id,
+    module.course_id,
+  );
+  if (!access.ok) {
     return { error: "Нет прав на изменение этого урока." };
   }
+  const course = access.course;
 
   let content: Json = {};
   let test_id: string | null = null;
@@ -402,15 +434,11 @@ export async function reorderModule(
     return { error: "Нужна авторизация." };
   }
 
-  const { data: course, error: courseErr } = await supabase
-    .from("courses")
-    .select("id, teacher_id, slug")
-    .eq("id", cid)
-    .maybeSingle();
-
-  if (courseErr || !course || course.teacher_id !== user.id) {
-    return { error: "Курс не найден или нет прав." };
+  const access = await loadCourseWithManageAccess(supabase, user.id, cid);
+  if (!access.ok) {
+    return { error: access.error };
   }
+  const course = access.course;
 
   const { data: rows, error: listErr } = await supabase
     .from("modules")
@@ -493,15 +521,15 @@ export async function reorderLesson(
     return { error: "Модуль не найден." };
   }
 
-  const { data: course, error: courseErr } = await supabase
-    .from("courses")
-    .select("id, teacher_id, slug")
-    .eq("id", module.course_id)
-    .maybeSingle();
-
-  if (courseErr || !course || course.teacher_id !== user.id) {
+  const access = await loadCourseWithManageAccess(
+    supabase,
+    user.id,
+    module.course_id,
+  );
+  if (!access.ok) {
     return { error: "Нет прав на изменение этого модуля." };
   }
+  const course = access.course;
 
   const { data: rows, error: listErr } = await supabase
     .from("lessons")
@@ -578,15 +606,15 @@ export async function deleteModule(
     return { error: "Модуль не найден." };
   }
 
-  const { data: course, error: courseErr } = await supabase
-    .from("courses")
-    .select("id, teacher_id, slug")
-    .eq("id", module.course_id)
-    .maybeSingle();
-
-  if (courseErr || !course || course.teacher_id !== user.id) {
+  const access = await loadCourseWithManageAccess(
+    supabase,
+    user.id,
+    module.course_id,
+  );
+  if (!access.ok) {
     return { error: "Нет прав на удаление этого модуля." };
   }
+  const course = access.course;
 
   const { data: moduleLessons, error: lessonsListErr } = await supabase
     .from("lessons")
@@ -660,15 +688,15 @@ export async function deleteLesson(
     return { error: "Модуль не найден." };
   }
 
-  const { data: course, error: courseErr } = await supabase
-    .from("courses")
-    .select("id, teacher_id, slug")
-    .eq("id", module.course_id)
-    .maybeSingle();
-
-  if (courseErr || !course || course.teacher_id !== user.id) {
+  const access = await loadCourseWithManageAccess(
+    supabase,
+    user.id,
+    module.course_id,
+  );
+  if (!access.ok) {
     return { error: "Нет прав на удаление этого урока." };
   }
+  const course = access.course;
 
   await removeImageBlocksForLessons(supabase, [id]);
 
@@ -708,13 +736,18 @@ export async function deleteCourse(
     return { error: "Нужна авторизация." };
   }
 
+  const access = await loadCourseWithManageAccess(supabase, user.id, cid);
+  if (!access.ok) {
+    return { error: access.error };
+  }
+
   const { data: course, error: courseErr } = await supabase
     .from("courses")
-    .select("id, teacher_id, slug, image_url, video_url")
+    .select("id, slug, image_url, video_url")
     .eq("id", cid)
     .maybeSingle();
 
-  if (courseErr || !course || course.teacher_id !== user.id) {
+  if (courseErr || !course) {
     return { error: "Курс не найден или нет прав." };
   }
 

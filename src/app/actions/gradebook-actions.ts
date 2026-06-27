@@ -3,6 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import {
+  canManageCourse,
+  hasStaffAccess,
+  isGlobalAdmin,
+  loadAuthContext,
+} from "@/lib/auth/access";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 import { readBlockIsForKids, readBlockSaveToJournal } from "@/lib/gradebook/journal-utils";
 import { normalizeStoredAssignmentPoints } from "@/lib/learn/assignment-grade-display";
@@ -94,13 +100,9 @@ export async function getBestTestAttemptDetails(
     return { success: false, error: "Требуется вход в систему" };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
+  if (!profile) {
     return { success: false, error: "Профиль не найден" };
   }
 
@@ -114,16 +116,16 @@ export async function getBestTestAttemptDetails(
     return { success: false, error: "Тест не найден" };
   }
 
-  /** Ученик смотрит только свои попытки; преподаватель — чужие в своём тесте; админ — любые. */
+  /** Ученик смотрит только свои попытки; сотрудник — чужие в своём тесте; глобальный админ — любые. */
   const skipTestOwnershipCheck =
-    profile.role === "admin" ||
+    isGlobalAdmin(profile) ||
     (user.id === sid.data && profile.role === "student");
 
   if (!skipTestOwnershipCheck) {
-    if (profile.role !== "teacher" && profile.role !== "admin") {
+    if (!hasStaffAccess(profile, tenants)) {
       return { success: false, error: "Недостаточно прав" };
     }
-    if (profile.role !== "admin" && testRow.user_id !== user.id) {
+    if (!isGlobalAdmin(profile) && testRow.user_id !== user.id) {
       return {
         success: false,
         error: "Этот тест принадлежит другому преподавателю",
@@ -437,17 +439,13 @@ export async function overrideTestAttemptGrade(
     return { success: false, error: "Требуется вход в систему" };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
+  if (!profile) {
     return { success: false, error: "Профиль не найден" };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (!hasStaffAccess(profile, tenants)) {
     return { success: false, error: "Недостаточно прав" };
   }
 
@@ -475,7 +473,7 @@ export async function overrideTestAttemptGrade(
     return { success: false, error: "Тест не найден" };
   }
 
-  if (profile.role !== "admin" && testRow.user_id !== user.id) {
+  if (!isGlobalAdmin(profile) && testRow.user_id !== user.id) {
     return { success: false, error: "Этот тест принадлежит другому преподавателю" };
   }
 
@@ -620,23 +618,19 @@ export async function getMatrixGradebookData(
     return { success: false, error: "Требуется вход в систему" };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
+  if (!profile) {
     return { success: false, error: "Профиль не найден" };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (!hasStaffAccess(profile, tenants)) {
     return { success: false, error: "Нет доступа" };
   }
 
   const { data: cohort, error: cohortError } = await supabase
     .from("cohorts")
-    .select("id, course_id, courses(id, teacher_id)")
+    .select("id, course_id, courses(id, organization_id)")
     .eq("id", parsedCohort.data)
     .maybeSingle();
 
@@ -649,7 +643,9 @@ export async function getMatrixGradebookData(
     return { success: false, error: "Курс не найден" };
   }
 
-  if (courseRel.teacher_id !== user.id) {
+  if (
+    !canManageCourse(profile, tenants, courseRel)
+  ) {
     return { success: false, error: "Нет доступа к журналу этой группы" };
   }
 

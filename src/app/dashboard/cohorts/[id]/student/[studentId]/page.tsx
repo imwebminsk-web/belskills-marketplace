@@ -10,6 +10,8 @@ import {
   AvatarImage,
 } from "@/components/ui/avatar";
 import { SiteHeader } from "@/components/site-header";
+import { hasStaffAccess } from "@/lib/auth/access";
+import { getUserTenantsSafe } from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
 import {
   resolveStudentDisplayName,
@@ -38,17 +40,20 @@ export default async function CohortStudentJournalPage({ params }: PageProps) {
     redirect("/login");
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const [{ data: profile, error: profileError }, tenants] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name, is_global_admin")
+      .eq("id", user.id)
+      .maybeSingle(),
+    getUserTenantsSafe(user.id),
+  ]);
 
   if (profileError || !profile) {
     redirect("/login");
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (!hasStaffAccess(profile, tenants)) {
     redirect("/dashboard");
   }
 

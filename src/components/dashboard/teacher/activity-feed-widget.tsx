@@ -26,7 +26,7 @@ function ActivityIcon({ type }: { type: ActivityEvent["type"] }) {
   }
   if (type === "test") {
     return (
-      <CheckCircle className="size-4 shrink-0 text-green-600 dark:text-green-500" aria-hidden />
+      <CheckCircle className="size-4 shrink-0 text-brand" aria-hidden />
     );
   }
   return <FileText className="text-muted-foreground size-4 shrink-0" aria-hidden />;

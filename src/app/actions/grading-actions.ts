@@ -4,6 +4,13 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import {
+  getStaffOrganizationIds,
+  hasStaffAccess,
+  isGlobalAdmin,
+  loadAuthContext,
+} from "@/lib/auth/access";
+import { readBlockSaveToJournal } from "@/lib/gradebook/journal-utils";
+import {
   getBestTestAttemptDetails,
   type GradebookBestAttemptDetails,
 } from "@/app/actions/gradebook-actions";
@@ -40,6 +47,15 @@ export type SubmitManualGradesResult =
   | { success: true; percentScore: number }
   | { success: false; error: string };
 
+const MAX_IN_FILTER_IDS = 500;
+
+function sliceIdsForInFilter(ids: string[]): string[] {
+  if (ids.length <= MAX_IN_FILTER_IDS) {
+    return ids;
+  }
+  return ids.slice(0, MAX_IN_FILTER_IDS);
+}
+
 /** Число сдач со статусом pending по когортам (через enrollments). */
 export async function getPendingReviewCounts(): Promise<GetPendingReviewCountsResult> {
   const supabase = await createClient();
@@ -51,18 +67,148 @@ export async function getPendingReviewCounts(): Promise<GetPendingReviewCountsRe
     return { success: false, error: "Нужна авторизация." };
   }
 
-  const { data: rows, error } = await supabase.rpc("get_my_pending_review_counts");
+  const { profile, tenants } = await loadAuthContext(user.id);
+  if (!profile) {
+    return { success: false, error: "Профиль не найден." };
+  }
 
-  if (error) {
-    console.error("[getPendingReviewCounts]", error.message);
+  if (!hasStaffAccess(profile, tenants)) {
+    return { success: true, counts: {} };
+  }
+
+  let orgIds = getStaffOrganizationIds(tenants);
+  if (isGlobalAdmin(profile)) {
+    const { data: allOrgs, error: orgsError } = await supabase
+      .from("organizations")
+      .select("id");
+
+    if (orgsError) {
+      console.error("[getPendingReviewCounts] organizations", orgsError.message);
+      return { success: false, error: "Не удалось загрузить сдачи на проверку." };
+    }
+
+    orgIds = (allOrgs ?? []).map((org) => org.id);
+  }
+
+  if (orgIds.length === 0) {
+    return { success: true, counts: {} };
+  }
+
+  const safeOrgIds = sliceIdsForInFilter(orgIds);
+
+  const { data: courses, error: coursesError } = await supabase
+    .from("courses")
+    .select("id")
+    .in("organization_id", safeOrgIds);
+
+  if (coursesError) {
+    console.error("[getPendingReviewCounts] courses", coursesError.message);
     return { success: false, error: "Не удалось загрузить сдачи на проверку." };
   }
 
-  const counts: Record<string, number> = {};
-  for (const row of rows ?? []) {
-    if (row.cohort_id) {
-      counts[row.cohort_id] = Number(row.pending_count);
+  const courseIds = (courses ?? []).map((course) => course.id);
+  if (courseIds.length === 0) {
+    return { success: true, counts: {} };
+  }
+
+  const { data: blockRows, error: blocksError } = await supabase
+    .from("lesson_blocks")
+    .select(
+      "id, content, lessons!inner(modules!inner(course_id, courses!inner(organization_id)))",
+    )
+    .eq("type", "assignment")
+    .in("lessons.modules.courses.organization_id", safeOrgIds);
+
+  if (blocksError) {
+    console.error("[getPendingReviewCounts] blocks", blocksError.message);
+    return { success: false, error: "Не удалось загрузить сдачи на проверку." };
+  }
+
+  const blockToCourseId = new Map<string, string>();
+  const journalBlockIds: string[] = [];
+
+  for (const row of blockRows ?? []) {
+    const nested = row as unknown as {
+      id: string;
+      content: Json;
+      lessons?:
+        | {
+            modules?:
+              | { course_id?: string }
+              | { course_id?: string }[];
+          }
+        | {
+            modules?:
+              | { course_id?: string }
+              | { course_id?: string }[];
+          }[];
+    };
+    const lesson = Array.isArray(nested.lessons)
+      ? nested.lessons[0]
+      : nested.lessons;
+    const moduleRel = lesson?.modules;
+    const mod = Array.isArray(moduleRel) ? moduleRel[0] : moduleRel;
+    const courseId = mod?.course_id;
+    if (!courseId || !readBlockSaveToJournal(nested.content)) {
+      continue;
     }
+    blockToCourseId.set(nested.id, courseId);
+    journalBlockIds.push(nested.id);
+  }
+
+  if (journalBlockIds.length === 0) {
+    return { success: true, counts: {} };
+  }
+
+  const { data: submissions, error: submissionsError } = await supabase
+    .from("assignment_submissions")
+    .select("student_id, lesson_block_id")
+    .eq("status", "pending")
+    .in("lesson_block_id", sliceIdsForInFilter(journalBlockIds));
+
+  if (submissionsError) {
+    console.error("[getPendingReviewCounts] submissions", submissionsError.message);
+    return { success: false, error: "Не удалось загрузить сдачи на проверку." };
+  }
+
+  if (!submissions?.length) {
+    return { success: true, counts: {} };
+  }
+
+  const { data: enrollments, error: enrollmentsError } = await supabase
+    .from("enrollments")
+    .select("user_id, course_id, cohort_id")
+    .in("course_id", sliceIdsForInFilter(courseIds))
+    .not("cohort_id", "is", null);
+
+  if (enrollmentsError) {
+    console.error("[getPendingReviewCounts] enrollments", enrollmentsError.message);
+    return { success: false, error: "Не удалось загрузить сдачи на проверку." };
+  }
+
+  const cohortByStudentCourse = new Map<string, string>();
+  for (const enrollment of enrollments ?? []) {
+    if (enrollment.cohort_id) {
+      cohortByStudentCourse.set(
+        `${enrollment.user_id}:${enrollment.course_id}`,
+        enrollment.cohort_id,
+      );
+    }
+  }
+
+  const counts: Record<string, number> = {};
+  for (const submission of submissions) {
+    const courseId = blockToCourseId.get(submission.lesson_block_id);
+    if (!courseId) {
+      continue;
+    }
+    const cohortId = cohortByStudentCourse.get(
+      `${submission.student_id}:${courseId}`,
+    );
+    if (!cohortId) {
+      continue;
+    }
+    counts[cohortId] = (counts[cohortId] ?? 0) + 1;
   }
 
   return { success: true, counts };
@@ -91,17 +237,13 @@ export async function getAttemptGradingDetails(
     return { success: false, error: "Требуется вход в систему" };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
+  if (!profile) {
     return { success: false, error: "Профиль не найден" };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (!hasStaffAccess(profile, tenants)) {
     return { success: false, error: "Недостаточно прав для проверки" };
   }
 
@@ -198,17 +340,13 @@ export async function submitManualGrades(
     return { success: false, error: "Требуется вход в систему" };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile, tenants } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
+  if (!profile) {
     return { success: false, error: "Профиль не найден" };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (!hasStaffAccess(profile, tenants)) {
     return { success: false, error: "Недостаточно прав для проверки" };
   }
 
@@ -239,7 +377,7 @@ export async function submitManualGrades(
     return { success: false, error: "Тест не найден" };
   }
 
-  if (profile.role !== "admin" && testRow.user_id !== user.id) {
+  if (!isGlobalAdmin(profile) && testRow.user_id !== user.id) {
     return {
       success: false,
       error: "Этот тест принадлежит другому преподавателю",

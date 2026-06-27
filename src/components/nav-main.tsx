@@ -38,6 +38,7 @@ export function NavMain({
                 isActive={
                   pathname === item.url || pathname.startsWith(`${item.url}/`)
                 }
+                className="data-[active=true]:bg-brand/10 data-[active=true]:font-medium data-[active=true]:text-brand data-[active=true]:[&>svg]:text-brand"
                 asChild
               >
                 <Link href={item.url} className="flex w-full items-center gap-2">

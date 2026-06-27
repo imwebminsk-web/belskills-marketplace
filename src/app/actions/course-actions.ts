@@ -5,6 +5,12 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import {
+  canAccessOrganization,
+  canManageCourse,
+  hasStaffAccess,
+  loadAuthContext,
+} from "@/lib/auth/access";
 import { createClient } from "@/lib/supabase/server";
 import {
   ageGroupFormSchema,
@@ -168,20 +174,30 @@ export async function createCourse(
     return { error: "Нужна авторизация." };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { profile, tenants, primaryTenant } = await loadAuthContext(user.id);
 
-  if (profileError || !profile) {
+  if (!profile) {
     return { error: "Профиль не найден." };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (!hasStaffAccess(profile, tenants)) {
     return {
-      error: "Создавать курсы могут только преподаватели и администраторы.",
+      error: "Создавать курсы могут только сотрудники организации или администраторы.",
     };
+  }
+
+  const organizationIdRaw = String(formData.get("organizationId") ?? "").trim();
+  const organizationId =
+    organizationIdRaw.length > 0
+      ? organizationIdRaw
+      : (primaryTenant?.organizationId ?? null);
+
+  if (!organizationId) {
+    return { error: "Не указана организация для курса." };
+  }
+
+  if (!canAccessOrganization(profile, tenants, organizationId)) {
+    return { error: "Нет доступа к этой организации." };
   }
 
   const base =
@@ -212,14 +228,14 @@ export async function createCourse(
   }
 
   const description = descriptionRaw.length > 0 ? descriptionRaw : null;
-  const price = priceNum.toFixed(2);
+  const price = priceNum;
 
   const { error: insertError } = await supabase.from("courses").insert({
     title,
     description,
     price,
     slug,
-    teacher_id: user.id,
+    organization_id: organizationId,
     status: "draft",
   });
 
@@ -387,9 +403,15 @@ export async function updateCourse(
     return { error: "Нужна авторизация." };
   }
 
+  const { profile, tenants } = await loadAuthContext(user.id);
+
+  if (!profile) {
+    return { error: "Профиль не найден." };
+  }
+
   const { data: existing, error: fetchError } = await supabase
     .from("courses")
-    .select("id, teacher_id, slug")
+    .select("id, organization_id, slug")
     .eq("id", id)
     .maybeSingle();
 
@@ -397,7 +419,7 @@ export async function updateCourse(
     return { error: "Курс не найден." };
   }
 
-  if (existing.teacher_id !== user.id) {
+  if (!canManageCourse(profile, tenants, existing)) {
     return { error: "Нет прав на изменение этого курса." };
   }
 
@@ -424,7 +446,7 @@ export async function updateCourse(
   const duration_unit =
     durationUnitRaw.length > 0 ? durationUnitRaw : null;
   const has_certificate = hasCertificateRaw === "true";
-  const price = priceNum.toFixed(2);
+  const price = priceNum;
 
   let promotional_images: string[] = [];
   if (promotionalImagesRaw.length > 0) {
@@ -472,8 +494,7 @@ export async function updateCourse(
       start_date,
       has_certificate,
     })
-    .eq("id", id)
-    .eq("teacher_id", user.id);
+    .eq("id", id);
 
   if (updateError) {
     console.error("[updateCourse]", updateError.message);
@@ -550,13 +571,19 @@ export async function uploadCourseGalleryImage(
     return { error: "Нужна авторизация." };
   }
 
+  const { profile, tenants } = await loadAuthContext(user.id);
+
+  if (!profile) {
+    return { error: "Профиль не найден." };
+  }
+
   const { data: row, error: fetchError } = await supabase
     .from("courses")
-    .select("id, teacher_id")
+    .select("id, organization_id")
     .eq("id", cid)
     .maybeSingle();
 
-  if (fetchError || !row || row.teacher_id !== user.id) {
+  if (fetchError || !row || !canManageCourse(profile, tenants, row)) {
     return { error: "Курс не найден или нет прав на загрузку." };
   }
 
@@ -609,21 +636,30 @@ export async function updateCourseImage(
     return { error: "Нужна авторизация." };
   }
 
+  const { profile, tenants } = await loadAuthContext(user.id);
+
+  if (!profile) {
+    return { error: "Профиль не найден." };
+  }
+
   const { data: course, error: fetchError } = await supabase
     .from("courses")
-    .select("id, teacher_id, slug")
+    .select("id, organization_id, slug")
     .eq("id", id)
     .maybeSingle();
 
-  if (fetchError || !course || course.teacher_id !== user.id) {
+  if (
+    fetchError ||
+    !course ||
+    !canManageCourse(profile, tenants, course)
+  ) {
     return { error: "Курс не найден или нет прав." };
   }
 
   const { error: updateError } = await supabase
     .from("courses")
     .update({ image_url: url.length > 0 ? url : null })
-    .eq("id", id)
-    .eq("teacher_id", user.id);
+    .eq("id", id);
 
   if (updateError) {
     console.error("[updateCourseImage]", updateError.message);
@@ -662,21 +698,30 @@ export async function updateCourseVideo(
     return { error: "Нужна авторизация." };
   }
 
+  const { profile, tenants } = await loadAuthContext(user.id);
+
+  if (!profile) {
+    return { error: "Профиль не найден." };
+  }
+
   const { data: course, error: fetchError } = await supabase
     .from("courses")
-    .select("id, teacher_id, slug")
+    .select("id, organization_id, slug")
     .eq("id", id)
     .maybeSingle();
 
-  if (fetchError || !course || course.teacher_id !== user.id) {
+  if (
+    fetchError ||
+    !course ||
+    !canManageCourse(profile, tenants, course)
+  ) {
     return { error: "Курс не найден или нет прав." };
   }
 
   const { error: updateError } = await supabase
     .from("courses")
     .update({ video_url: url.length > 0 ? url : null })
-    .eq("id", id)
-    .eq("teacher_id", user.id);
+    .eq("id", id);
 
   if (updateError) {
     console.error("[updateCourseVideo]", updateError.message);

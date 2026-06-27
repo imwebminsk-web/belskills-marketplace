@@ -91,7 +91,7 @@ function LessonStatusIcon({ status }: { status: LessonNavStatus }) {
     case "completed":
       return (
         <CheckCircle2
-          className="size-4 shrink-0 text-green-500"
+          className="size-4 shrink-0 text-brand"
           aria-hidden
         />
       );
@@ -282,7 +282,7 @@ export function PlayerLayout({
                                   href={`/learn/${encodeURIComponent(courseSlug)}/${l.id}`}
                                   className={cn(
                                     "flex items-start gap-2 border-l-4 px-2 py-2 text-sm transition-colors",
-                                    "hover:bg-accent/50",
+                                    "hover:bg-muted/50",
                                     active
                                       ? "bg-primary/10 border-primary text-primary font-medium"
                                       : "border-transparent",

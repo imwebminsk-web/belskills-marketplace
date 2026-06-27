@@ -23,7 +23,7 @@ export default async function AdminTaxonomiesPage() {
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("full_name, role")
+    .select("full_name, is_global_admin")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -31,7 +31,7 @@ export default async function AdminTaxonomiesPage() {
     redirect("/login");
   }
 
-  if (profile.role !== "admin") {
+  if (!profile.is_global_admin) {
     redirect("/dashboard");
   }
 

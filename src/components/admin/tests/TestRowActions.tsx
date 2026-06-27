@@ -87,7 +87,7 @@ export function TestRowActions({ testId }: TestRowActionsProps) {
           >
             <button
               type="submit"
-              className="flex w-full cursor-default items-center gap-2 rounded-md px-1.5 py-1.5 text-sm outline-none select-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent"
+              className="flex w-full cursor-default items-center gap-2 rounded-md px-1.5 py-1.5 text-sm outline-none select-none hover:bg-muted hover:text-foreground focus-visible:bg-muted"
             >
               <Play className="size-4 shrink-0" aria-hidden />
               Пройти

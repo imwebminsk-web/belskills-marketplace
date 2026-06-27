@@ -5,6 +5,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
 import { ModeToggle } from "@/components/mode-toggle";
 import { LogoutButton } from "@/components/site/logout-button";
+import { cn } from "@/lib/utils";
 
 export async function SiteHeader() {
   const supabase = await createClient();
@@ -27,20 +28,26 @@ export async function SiteHeader() {
           {!isAuthed ? (
             <Link
               href="/login"
-              className={buttonVariants({ size: "sm" })}
+              className={cn(
+                buttonVariants({ size: "sm" }),
+                "bg-brand text-brand-foreground hover:bg-brand/90",
+              )}
             >
               Войти
             </Link>
           ) : (
             <>
               <Link
-                href="/dashboard/tests"
-                className={buttonVariants({
-                  variant: "outline",
-                  size: "sm",
-                })}
+                href="/dashboard"
+                className={cn(
+                  buttonVariants({
+                    variant: "outline",
+                    size: "sm",
+                  }),
+                  "border-brand text-brand hover:bg-brand/10",
+                )}
               >
-                Админка
+                Кабинет
               </Link>
               <LogoutButton />
             </>

@@ -75,11 +75,11 @@ function SortableOrderingPill({
         disabled ? "cursor-default" : "cursor-grab active:cursor-grabbing",
         isDragging && "opacity-60",
         reviewState === "correct" &&
-          "border-emerald-500 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100",
+          "border-brand bg-brand/10 text-brand dark:bg-brand/20 dark:text-brand-foreground",
         reviewState === "wrong" &&
           "border-red-500 bg-red-50 text-red-900 dark:bg-red-950 dark:text-red-100",
         reviewState == null &&
-          "border-slate-200 bg-white text-slate-800 hover:border-blue-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100",
+          "border-slate-200 bg-white text-slate-800 hover:border-brand/50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100",
       )}
       {...(disabled ? {} : { ...attributes, ...listeners })}
     >
@@ -207,7 +207,7 @@ function OrderingSortableItem({
       </DndContext>
 
       {showCorrectOrderBlock ? (
-        <div className="mt-4 rounded-md border border-emerald-200/60 bg-emerald-50/50 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/30">
+        <div className="mt-4 rounded-md border border-brand/30 bg-brand/10 p-3 dark:border-brand/40 dark:bg-brand/20">
           <p className="text-muted-foreground mb-2 text-sm">
             {t("quizResult.correctOrder")}
           </p>
@@ -215,7 +215,7 @@ function OrderingSortableItem({
             {correctElements.map((element) => (
               <span
                 key={element.id}
-                className="rounded-full border border-emerald-500/40 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-100"
+                className="rounded-full border border-brand/40 bg-brand/10 px-4 py-2 text-sm font-medium text-brand dark:border-brand/40 dark:bg-brand/20 dark:text-brand-foreground"
               >
                 {element.text}
               </span>

@@ -3,12 +3,13 @@ import { notFound, redirect } from "next/navigation";
 import { getStudentProgress } from "@/app/actions/student-dashboard-actions";
 import { getUnreadCounts } from "@/app/actions/chat-receipt-actions";
 import { CourseHubClient } from "@/components/learn/course-hub-client";
-import { createClient } from "@/lib/supabase/server";
+import { getOrganizationStaffUserIds } from "@/lib/auth/access";
 import {
   collectPublishedLessonIds,
   sortModules,
 } from "@/lib/learn/curriculum-order";
 import { fetchPublishedCourseForLearn } from "@/lib/learn/fetch-published-course";
+import { createClient } from "@/lib/supabase/server";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -85,7 +86,7 @@ export default async function LearnCourseEntryPage({ params }: PageProps) {
 
   const { data: enrollment, error: enrollmentError } = await supabase
     .from("enrollments")
-    .select("cohort_id, courses(teacher_id)")
+    .select("cohort_id")
     .eq("user_id", user.id)
     .eq("course_id", course.id)
     .maybeSingle();
@@ -95,11 +96,20 @@ export default async function LearnCourseEntryPage({ params }: PageProps) {
   }
 
   const cohortId = enrollment?.cohort_id ?? null;
-  const courseEnrollment = enrollment?.courses;
-  const courseMeta = Array.isArray(courseEnrollment)
-    ? courseEnrollment[0]
-    : courseEnrollment;
-  let teacherId = courseMeta?.teacher_id ?? "";
+
+  const { data: courseOrg, error: courseOrgError } = await supabase
+    .from("courses")
+    .select("organization_id")
+    .eq("id", course.id)
+    .maybeSingle();
+
+  if (courseOrgError) {
+    console.error("[LearnCourseEntryPage] courses", courseOrgError.message);
+  }
+
+  const staffUserIds = courseOrg?.organization_id
+    ? await getOrganizationStaffUserIds(courseOrg.organization_id)
+    : [];
 
   let isChatEnabled = true;
   if (cohortId) {
@@ -116,19 +126,6 @@ export default async function LearnCourseEntryPage({ params }: PageProps) {
     }
   }
 
-  if (!teacherId) {
-    const { data: courseRow, error: courseMetaError } = await supabase
-      .from("courses")
-      .select("teacher_id")
-      .eq("id", course.id)
-      .maybeSingle();
-
-    if (courseMetaError) {
-      console.error("[LearnCourseEntryPage] courses", courseMetaError.message);
-    }
-    teacherId = courseRow?.teacher_id ?? "";
-  }
-
   const unreadRes = await getUnreadCounts();
   const unreadMap = unreadRes.success ? unreadRes.counts : {};
   const unreadCount = cohortId != null ? (unreadMap[cohortId] ?? 0) : 0;
@@ -143,7 +140,7 @@ export default async function LearnCourseEntryPage({ params }: PageProps) {
         userId={user.id}
         userDisplayName={displayName}
         cohortId={cohortId}
-        teacherId={teacherId}
+        staffUserIds={staffUserIds}
         isChatEnabled={isChatEnabled}
         unreadCount={unreadCount}
       />

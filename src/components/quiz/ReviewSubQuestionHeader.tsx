@@ -61,7 +61,7 @@ export function ReviewSubQuestionHeader({
           isPartial &&
             "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200",
           isCorrect &&
-            "border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+            "border-brand/30 bg-brand/15 text-brand",
         )}
       >
         {statusLabel}

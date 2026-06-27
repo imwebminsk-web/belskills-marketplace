@@ -2,12 +2,16 @@ import type { LucideIcon } from "lucide-react";
 import {
   BookOpenIcon,
   CheckSquare,
+  CreditCardIcon,
   GraduationCapIcon,
   LayoutDashboardIcon,
   LibraryIcon,
   LifeBuoyIcon,
+  ReceiptTextIcon,
+  SettingsIcon,
   Users,
   UsersIcon,
+  Wallet,
 } from "lucide-react";
 
 import type { Database } from "@/types/database.types";
@@ -29,6 +33,21 @@ export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
         url: "/dashboard/admin/taxonomies",
         icon: LibraryIcon,
       },
+      {
+        title: "Тарифы",
+        url: "/dashboard/admin/tariffs",
+        icon: CreditCardIcon,
+      },
+      {
+        title: "Настройки биллинга",
+        url: "/dashboard/admin/settings/billing",
+        icon: SettingsIcon,
+      },
+      {
+        title: "Счета клиентов",
+        url: "/dashboard/admin/invoices",
+        icon: Wallet,
+      },
       { title: "Поддержка", url: "/dashboard/support", icon: LifeBuoyIcon },
     ];
   }
@@ -38,6 +57,16 @@ export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
       { title: "Группы", url: "/dashboard/cohorts", icon: UsersIcon },
       { title: "Ученики", url: "/dashboard/students", icon: Users },
       { title: "Тесты", url: "/dashboard/tests", icon: CheckSquare },
+      {
+        title: "Тарифы",
+        url: "/dashboard/tariffs",
+        icon: CreditCardIcon,
+      },
+      {
+        title: "Счета и акты",
+        url: "/dashboard/invoices",
+        icon: ReceiptTextIcon,
+      },
       { title: "Поддержка", url: "/dashboard/support", icon: LifeBuoyIcon },
     ];
   }

@@ -3,6 +3,12 @@ import { redirect } from "next/navigation";
 
 import { SettingsPageContent } from "@/components/dashboard/settings/settings-page-content";
 import { SiteHeader } from "@/components/site-header";
+import {
+  getPrimaryActiveStaffTenant,
+  getUserTenantsSafe,
+  hasCreatorOrgAccess,
+  resolveDashboardShellRole,
+} from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
@@ -24,15 +30,23 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
     redirect("/login");
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role, avatar_url")
-    .eq("id", user.id)
-    .maybeSingle();
+  const [{ data: profile, error: profileError }, tenants] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name, avatar_url, is_global_admin")
+      .eq("id", user.id)
+      .maybeSingle(),
+    getUserTenantsSafe(user.id),
+  ]);
 
   if (profileError || !profile) {
     redirect("/login");
   }
+
+  const shellRole = resolveDashboardShellRole(profile.is_global_admin, tenants);
+  const staffSchoolName = hasCreatorOrgAccess(tenants)
+    ? (getPrimaryActiveStaffTenant(tenants)?.organizationName ?? tenants[0]?.organizationName ?? null)
+    : null;
 
   const displayName =
     profile.full_name?.trim() ||
@@ -57,11 +71,12 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
           <SettingsPageContent
             userId={user.id}
             email={user.email ?? "—"}
-            role={profile.role}
+            role={shellRole}
             defaultFullName={profile.full_name ?? ""}
             avatarUrl={profile.avatar_url}
             displayName={displayName}
             feedbackKey={feedbackKey}
+            staffSchoolName={staffSchoolName}
           />
         </div>
       </div>

@@ -6,6 +6,8 @@ import { CourseEditorTabs } from "@/components/dashboard/teacher/course-editor-t
 import type { CurriculumModuleRow } from "@/components/dashboard/teacher/curriculum-tab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { canManageCourse, hasStaffAccess } from "@/lib/auth/access";
+import { getUserTenantsSafe } from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
 
 type PageProps = {
@@ -44,17 +46,20 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
     redirect("/login");
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const [{ data: profile, error: profileError }, tenants] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name, is_global_admin")
+      .eq("id", user.id)
+      .maybeSingle(),
+    getUserTenantsSafe(user.id),
+  ]);
 
   if (profileError || !profile) {
     redirect("/login");
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (!hasStaffAccess(profile, tenants)) {
     redirect("/dashboard");
   }
 
@@ -84,6 +89,7 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
       duration_unit,
       start_date,
       level,
+      organization_id,
       modules (
         id,
         title,
@@ -99,14 +105,16 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
     `,
     )
     .eq("slug", decodedSlug)
-    .eq("teacher_id", user.id)
     .maybeSingle();
 
   if (error) {
     throw new Error(error.message);
   }
 
-  if (!courseRow) {
+  if (
+    !courseRow ||
+    !canManageCourse(profile, tenants, courseRow)
+  ) {
     return (
       <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-6">
         <Button variant="ghost" className="w-fit px-0" asChild>
@@ -123,7 +131,7 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
             (таблица{" "}
             <code className="bg-muted rounded px-1">courses</code>, поля{" "}
             <code className="bg-muted rounded px-1">slug</code> и{" "}
-            <code className="bg-muted rounded px-1">teacher_id</code>).
+            <code className="bg-muted rounded px-1">organization_id</code>).
           </p>
         </div>
       </div>
@@ -188,7 +196,7 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
         {isPublished ? (
           <Badge
             variant="outline"
-            className="shrink-0 border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+            className="shrink-0 border-brand/40 bg-brand/10 text-brand"
           >
             Опубликован
           </Badge>

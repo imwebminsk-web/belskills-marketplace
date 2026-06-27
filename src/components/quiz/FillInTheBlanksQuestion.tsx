@@ -40,9 +40,9 @@ export function DroppableBlankSlot({
       className={cn(
         "mx-1 inline-flex min-h-[32px] min-w-[80px] items-center justify-center rounded px-3 align-middle text-sm font-medium transition-colors",
         assignedWord
-          ? "cursor-grab border border-slate-200 bg-white text-slate-800 shadow-sm hover:border-blue-400 active:cursor-grabbing"
+          ? "cursor-grab border border-slate-200 bg-white text-slate-800 shadow-sm hover:border-brand active:cursor-grabbing"
           : isOver
-            ? "border-2 border-solid border-blue-400 bg-blue-50 text-transparent select-none"
+            ? "border-2 border-solid border-brand bg-brand/10 text-transparent select-none"
             : "border-b-2 border-dashed border-slate-300 bg-slate-50 text-transparent select-none",
       )}
     >
@@ -167,14 +167,14 @@ export function ReviewBlankSlot({
         className={cn(
           "inline-flex min-h-[32px] min-w-[72px] items-center justify-center rounded border px-2 py-1 text-sm font-medium",
           ok
-            ? "border-green-500 bg-green-50 text-slate-900"
+            ? "border-brand bg-brand/10 text-slate-900"
             : "border-red-500 bg-red-50 text-slate-900",
         )}
       >
         {userW?.text ?? "—"}
       </span>
       {!ok && rightW ? (
-        <span className="text-green-700 mt-0.5 max-w-[140px] text-center text-xs leading-tight">
+        <span className="text-brand mt-0.5 max-w-[140px] text-center text-xs leading-tight">
           верно: «{rightW.text}»
         </span>
       ) : null}

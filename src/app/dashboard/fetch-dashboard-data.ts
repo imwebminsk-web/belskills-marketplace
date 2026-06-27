@@ -62,16 +62,11 @@ function mapCourseRow(
     price: string | number | null;
     slug: string;
     language: string | null;
-    teacher: { full_name: string | null } | { full_name: string | null }[] | null;
   },
 ): DashboardTableRow {
   const typeLabel =
     row.language?.trim() ||
     (row.level != null ? String(row.level) : "—");
-  const teacherRel = row.teacher;
-  const teacherName = Array.isArray(teacherRel)
-    ? teacherRel[0]?.full_name
-    : teacherRel?.full_name;
   return dashboardTableRowSchema.parse({
     id: uuidToStableNumber(row.id),
     header: row.title,
@@ -80,7 +75,7 @@ function mapCourseRow(
     target: formatCoursePriceDecimal(row.price),
     limit: row.slug,
     slug: row.slug,
-    reviewer: teacherName?.trim() || "—",
+    reviewer: "—",
   });
 }
 
@@ -126,23 +121,23 @@ export type DashboardData = {
 async function fetchTeacherMetrics(
   supabase: Awaited<ReturnType<typeof createClient>>,
   courseIds: string[],
-  userId: string,
+  organizationId: string,
 ): Promise<TeacherDashboardMetrics> {
   const totalCourses = courseIds.length;
 
   const assignmentBlockContext = await loadTeacherAssignmentBlockContextMap(
     supabase,
-    userId,
+    organizationId,
   );
   const assignmentBlockIds = [...assignmentBlockContext.keys()];
   const dataClient = rlsBypassClient(supabase);
 
   const pendingTestReviewsQuery = dataClient
     .from("student_attempts")
-    .select("id, tests!inner(user_id)", { count: "exact", head: true })
+    .select("id, tests!inner(organization_id)", { count: "exact", head: true })
     .eq("status", "pending_review")
     .eq("is_training_mode", false)
-    .eq("tests.user_id", userId);
+    .eq("tests.organization_id", organizationId);
 
   if (courseIds.length === 0) {
     const [
@@ -225,8 +220,8 @@ function normalizePendingReviewLimit(limit: number): number {
 
 function readCourseFromNestedRel(
   coursesRel:
-    | { title: string | null; slug: string; teacher_id?: string }
-    | { title: string | null; slug: string; teacher_id?: string }[]
+    | { title: string | null; slug: string; organization_id?: string | null }
+    | { title: string | null; slug: string; organization_id?: string | null }[]
     | null
     | undefined,
 ): { title: string | null; slug: string } | null {
@@ -243,7 +238,7 @@ function readCourseFromNestedRel(
  */
 async function loadTeacherAssignmentBlockContextMap(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
+  organizationId: string,
 ): Promise<Map<string, AssignmentBlockContext>> {
   const map = new Map<string, AssignmentBlockContext>();
 
@@ -258,14 +253,14 @@ async function loadTeacherAssignmentBlockContextMap(
           courses!inner(
             title,
             slug,
-            teacher_id
+            organization_id
           )
         )
       )
     `,
     )
     .eq("type", "assignment")
-    .eq("lessons.modules.courses.teacher_id", userId)
+    .eq("lessons.modules.courses.organization_id", organizationId)
     .eq("content->>save_to_journal", "true");
 
   if (error) {
@@ -363,12 +358,12 @@ async function countPendingAssignmentReviewsForTeacher(
  * Последние сдачи заданий и тестов, ожидающие проверки преподавателя.
  */
 export async function getPendingReviewsForTeacher(
-  userId: string,
+  organizationId: string,
   limit = 5,
 ): Promise<PendingReviewItem[]> {
   const [assignmentItems, testItems] = await Promise.all([
-    getPendingAssignmentReviewsForTeacher(userId, limit),
-    getPendingTestReviewsForTeacher(userId, limit),
+    getPendingAssignmentReviewsForOrganization(organizationId, limit),
+    getPendingTestReviewsForOrganization(organizationId, limit),
   ]);
 
   return [...assignmentItems, ...testItems]
@@ -387,7 +382,7 @@ type PendingTestContext = {
 
 async function buildTeacherPendingTestContextMap(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
+  organizationId: string,
   testIds: string[],
 ): Promise<Map<string, PendingTestContext>> {
   const map = new Map<string, PendingTestContext>();
@@ -409,12 +404,12 @@ async function buildTeacherPendingTestContextMap(
         courses!inner(
           title,
           slug,
-          teacher_id
+          organization_id
         )
       )
     `,
     )
-    .eq("modules.courses.teacher_id", userId)
+    .eq("modules.courses.organization_id", organizationId)
     .in("test_id", uniqueTestIds);
 
   if (lessonsError) {
@@ -474,14 +469,14 @@ async function buildTeacherPendingTestContextMap(
           courses!inner(
             title,
             slug,
-            teacher_id
+            organization_id
           )
         )
       )
     `,
     )
     .eq("type", "quiz")
-    .eq("lessons.modules.courses.teacher_id", userId)
+    .eq("lessons.modules.courses.organization_id", organizationId)
     .or(orFilter);
 
   if (blocksError) {
@@ -536,13 +531,13 @@ type PendingTestAttemptRow = {
   student_id: string;
   test_id: string;
   tests:
-    | { title: string | null; user_id: string }
-    | { title: string | null; user_id: string }[]
+    | { title: string | null; organization_id: string | null }
+    | { title: string | null; organization_id: string | null }[]
     | null;
 };
 
-async function getPendingTestReviewsForTeacher(
-  userId: string,
+async function getPendingTestReviewsForOrganization(
+  organizationId: string,
   limit: number,
 ): Promise<PendingReviewItem[]> {
   const supabase = await createClient();
@@ -559,13 +554,13 @@ async function getPendingTestReviewsForTeacher(
       test_id,
       tests!inner(
         title,
-        user_id
+        organization_id
       )
     `,
     )
     .eq("status", "pending_review")
     .eq("is_training_mode", false)
-    .eq("tests.user_id", userId)
+    .eq("tests.organization_id", organizationId)
     .order("completed_at", { ascending: false, nullsFirst: false })
     .limit(fetchLimit);
 
@@ -584,7 +579,7 @@ async function getPendingTestReviewsForTeacher(
 
   const testContextById = await buildTeacherPendingTestContextMap(
     supabase,
-    userId,
+    organizationId,
     attemptRows.map((row) => row.test_id),
   );
   const studentIds = [...new Set(attemptRows.map((row) => row.student_id))];
@@ -635,8 +630,8 @@ async function getPendingTestReviewsForTeacher(
   return items;
 }
 
-async function getPendingAssignmentReviewsForTeacher(
-  userId: string,
+async function getPendingAssignmentReviewsForOrganization(
+  organizationId: string,
   limit: number,
 ): Promise<PendingReviewItem[]> {
   const supabase = await createClient();
@@ -644,7 +639,7 @@ async function getPendingAssignmentReviewsForTeacher(
 
   const blockContextById = await loadTeacherAssignmentBlockContextMap(
     supabase,
-    userId,
+    organizationId,
   );
   const blockIds = [...blockContextById.keys()];
   if (blockIds.length === 0) {
@@ -790,14 +785,30 @@ async function fetchAdminUsers(
 export async function fetchDashboardData(
   userId: string,
   role: ProfileRole,
+  organizationId?: string,
 ): Promise<DashboardData> {
   const supabase = await createClient();
 
   if (role === "teacher") {
+    if (!organizationId) {
+      return {
+        tableRows: [],
+        sectionCards: [],
+        teacherMetrics: {
+          totalCourses: 0,
+          totalCohorts: 0,
+          totalStudents: 0,
+          pendingReviews: 0,
+        },
+        pendingReviews: [],
+        activityEvents: [],
+      };
+    }
+
     const { data: courses, error } = await supabase
       .from("courses")
       .select("id")
-      .eq("teacher_id", userId);
+      .eq("organization_id", organizationId);
 
     if (error) {
       console.error("[fetchDashboardData] teacher courses", error.message);
@@ -806,9 +817,9 @@ export async function fetchDashboardData(
     const courseIds = (courses ?? []).map((c) => c.id);
 
     const [teacherMetrics, pendingReviews, activityEvents] = await Promise.all([
-      fetchTeacherMetrics(supabase, courseIds, userId),
-      getPendingReviewsForTeacher(userId, 5),
-      getRecentActivity(userId, 15),
+      fetchTeacherMetrics(supabase, courseIds, organizationId),
+      getPendingReviewsForTeacher(organizationId, 5),
+      getRecentActivity(organizationId, 15),
     ]);
 
     return {
@@ -823,27 +834,47 @@ export async function fetchDashboardData(
   if (role === "admin") {
     const [
       adminUsers,
-      { count: studentsCount },
-      { count: teachersCount },
+      { data: staffMembers, error: staffError },
       { count: coursesCount },
     ] = await Promise.all([
       fetchAdminUsers(supabase),
-      supabase
-        .from("profiles")
-        .select("*", { count: "exact", head: true })
-        .eq("role", "student"),
-      supabase
-        .from("profiles")
-        .select("*", { count: "exact", head: true })
-        .eq("role", "teacher"),
+      supabase.from("organization_members").select("user_id"),
       supabase
         .from("courses")
         .select("*", { count: "exact", head: true }),
     ]);
 
+    if (staffError) {
+      console.error("[fetchDashboardData] staff members", staffError.message);
+    }
+
+    const staffUserIds = new Set(
+      (staffMembers ?? []).map((row) => row.user_id),
+    );
+
+    let studentsCountQuery = supabase
+      .from("profiles")
+      .select("*", { count: "exact", head: true })
+      .eq("is_global_admin", false);
+
+    if (staffUserIds.size > 0) {
+      studentsCountQuery = studentsCountQuery.not(
+        "id",
+        "in",
+        `(${[...staffUserIds].map((id) => `"${id}"`).join(",")})`,
+      );
+    }
+
+    const { count: studentsCount, error: studentsError } =
+      await studentsCountQuery;
+
+    if (studentsError) {
+      console.error("[fetchDashboardData] student count", studentsError.message);
+    }
+
     const adminMetrics: AdminDashboardMetrics = {
       totalStudents: studentsCount ?? 0,
-      totalTeachers: teachersCount ?? 0,
+      totalTeachers: staffUserIds.size,
       totalCourses: coursesCount ?? 0,
     };
 
@@ -857,9 +888,7 @@ export async function fetchDashboardData(
 
   const { data: courses, error } = await supabase
     .from("courses")
-    .select(
-      "id, title, status, level, price, slug, language, teacher:profiles!courses_teacher_id_fkey ( full_name )",
-    )
+    .select("id, title, status, level, price, slug, language")
     .eq("status", "published")
     .order("title")
     .limit(40);

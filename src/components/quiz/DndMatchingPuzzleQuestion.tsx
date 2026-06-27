@@ -241,7 +241,7 @@ function PuzzleRow({
         ) : (
           <div
             className={cn(
-              "relative z-10 flex min-h-[64px] items-center overflow-visible rounded-l-xl rounded-r-none border border-black/12 border-r-0 border-r-transparent bg-green-500/30 py-3 pl-4 pr-7 drop-shadow-sm ring-2 ring-green-500 dark:border-white/8",
+              "relative z-10 flex min-h-[64px] items-center overflow-visible rounded-l-xl rounded-r-none border border-black/12 border-r-0 border-r-transparent bg-brand/30 py-3 pl-4 pr-7 drop-shadow-sm ring-2 ring-brand dark:border-white/8",
               PIECE_80,
               isLocked && "translate-x-[16px]",
               glow

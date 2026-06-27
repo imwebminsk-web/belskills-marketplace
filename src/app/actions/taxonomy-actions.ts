@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { isGlobalAdmin, loadGateProfile } from "@/lib/auth/access";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database.types";
 
@@ -49,17 +50,13 @@ async function requireAdmin():
     return { success: false, error: "Требуется вход в систему" };
   }
 
-  const { data: profile, error } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const profile = await loadGateProfile(user.id);
 
-  if (error || !profile) {
+  if (!profile) {
     return { success: false, error: "Профиль не найден" };
   }
 
-  if (profile.role !== "admin") {
+  if (!isGlobalAdmin(profile)) {
     return { success: false, error: "Доступ только для администратора" };
   }
 

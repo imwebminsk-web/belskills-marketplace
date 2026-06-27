@@ -4,6 +4,11 @@ import { redirect } from "next/navigation";
 import { CreateCourseDialog } from "@/components/dashboard/teacher/create-course-dialog";
 import { TeacherCourseCard } from "@/components/dashboard/teacher/TeacherCourseCard";
 import { SiteHeader } from "@/components/site-header";
+import {
+  getStaffOrganizationIds,
+  hasStaffAccess,
+} from "@/lib/auth/access";
+import { getUserTenantsSafe } from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
@@ -21,31 +26,61 @@ export default async function DashboardCoursesPage() {
     redirect("/login");
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const [{ data: profile, error: profileError }, tenants] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name, is_global_admin")
+      .eq("id", user.id)
+      .maybeSingle(),
+    getUserTenantsSafe(user.id),
+  ]);
 
   if (profileError || !profile) {
     redirect("/login");
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (!hasStaffAccess(profile, tenants)) {
     redirect("/dashboard");
   }
 
-  const { data: courses, error } = await supabase
-    .from("courses")
-    .select("id, title, description, status, price, slug, image_url")
-    .eq("teacher_id", user.id)
-    .order("created_at", { ascending: false });
+  let list: {
+    id: string;
+    title: string;
+    description: string | null;
+    status: string;
+    price: number | null;
+    slug: string;
+    image_url: string | null;
+  }[] = [];
 
-  if (error) {
-    console.error("[DashboardCoursesPage]", error.message);
+  if (profile.is_global_admin) {
+    const { data: courses, error } = await supabase
+      .from("courses")
+      .select("id, title, description, status, price, slug, image_url")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("[DashboardCoursesPage]", error.message);
+    }
+
+    list = courses ?? [];
+  } else {
+    const orgIds = getStaffOrganizationIds(tenants);
+
+    if (orgIds.length > 0) {
+      const { data: courses, error } = await supabase
+        .from("courses")
+        .select("id, title, description, status, price, slug, image_url")
+        .in("organization_id", orgIds)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("[DashboardCoursesPage]", error.message);
+      }
+
+      list = courses ?? [];
+    }
   }
-
-  const list = courses ?? [];
 
   const displayName =
     profile.full_name?.trim() ||

@@ -161,7 +161,7 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
         <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           <h1 className="text-2xl font-semibold tracking-tight">{displayTitle}</h1>
           {gradesSaved ? (
-            <Badge className="border-emerald-600/50 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200">
+            <Badge className="border-brand/40 bg-brand/10 text-brand">
               <CheckCircle2Icon className="mr-1 size-3" aria-hidden />
               Проверено
             </Badge>
@@ -357,7 +357,7 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
           className={cn(
             "min-h-11 w-full sm:w-auto",
             gradesSaved &&
-              "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-600",
+              "bg-brand text-brand-foreground hover:bg-brand/90",
           )}
           onClick={handleSubmit}
           disabled={

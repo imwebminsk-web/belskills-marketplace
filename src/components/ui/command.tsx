@@ -87,7 +87,7 @@ function CommandItem({
       type="button"
       data-slot="command-item"
       className={cn(
-        "relative flex w-full cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50",
+        "relative flex w-full cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50",
         className
       )}
       {...props}

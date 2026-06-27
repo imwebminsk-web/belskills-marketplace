@@ -45,7 +45,7 @@ function optionLabelClass(selected: boolean, isCorrect: boolean | null): string 
       : "bg-card";
   }
   if (isCorrect) {
-    return "border-emerald-500 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100";
+    return "border-brand bg-brand/10 text-brand dark:bg-brand/20 dark:text-brand-foreground";
   }
   return "border-red-500 bg-red-50 text-red-900 dark:bg-red-950 dark:text-red-100";
 }
@@ -53,11 +53,11 @@ function optionLabelClass(selected: boolean, isCorrect: boolean | null): string 
 function optionReviewContainerClass(reviewState: OptionReviewState): string {
   switch (reviewState) {
     case "correct_selected":
-      return "border-emerald-500 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100";
+      return "border-brand bg-brand/10 text-brand dark:bg-brand/20 dark:text-brand-foreground";
     case "incorrect_selected":
       return "border-red-500 bg-red-50 text-red-900 dark:bg-red-950 dark:text-red-100";
     case "correct_missed":
-      return "border-2 border-dashed border-emerald-400 bg-emerald-50/30 text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100";
+      return "border-2 border-dashed border-brand/60 bg-brand/10 text-brand dark:bg-brand/20 dark:text-brand-foreground";
     case "neutral":
       return "opacity-70 bg-card";
   }
@@ -66,11 +66,11 @@ function optionReviewContainerClass(reviewState: OptionReviewState): string {
 function imageReviewContainerClass(reviewState: OptionReviewState): string {
   switch (reviewState) {
     case "correct_selected":
-      return "ring-4 ring-emerald-500 border-emerald-500";
+      return "ring-4 ring-brand border-brand";
     case "incorrect_selected":
       return "ring-4 ring-destructive border-destructive";
     case "correct_missed":
-      return "border-4 border-dashed border-emerald-400";
+      return "border-4 border-dashed border-brand/60";
     case "neutral":
       return "opacity-70";
   }
@@ -79,7 +79,7 @@ function imageReviewContainerClass(reviewState: OptionReviewState): string {
 function TextOptionMissedBadge() {
   const { t } = useLanguage();
   return (
-    <span className="ml-auto shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300">
+    <span className="ml-auto shrink-0 rounded-full bg-brand/15 px-2 py-1 text-xs font-medium text-brand dark:bg-brand/20 dark:text-brand">
       {t("quizResult.missed")}
     </span>
   );
@@ -95,7 +95,7 @@ function ImageOptionReviewBadge({
   if (reviewState === "correct_selected") {
     return (
       <Badge
-        className="absolute top-2 right-2 z-20 gap-1 border-emerald-600/30 bg-emerald-500/95 px-2 py-0.5 text-emerald-50 shadow-md hover:bg-emerald-500/95"
+        className="absolute top-2 right-2 z-20 gap-1 border-brand/30 bg-brand/95 px-2 py-0.5 text-brand-foreground shadow-md hover:bg-brand/95"
         aria-hidden
       >
         <Check className="size-3.5 shrink-0" strokeWidth={2.5} />
@@ -121,7 +121,7 @@ function ImageOptionReviewBadge({
     return (
       <Badge
         variant="outline"
-        className="absolute top-2 right-2 z-20 border-emerald-500/50 bg-emerald-500/10 px-2 py-0.5 text-emerald-800 shadow-md dark:text-emerald-200"
+        className="absolute top-2 right-2 z-20 border-brand/50 bg-brand/10 px-2 py-0.5 text-brand shadow-md"
         aria-hidden
       >
         {t("quizResult.missed")}

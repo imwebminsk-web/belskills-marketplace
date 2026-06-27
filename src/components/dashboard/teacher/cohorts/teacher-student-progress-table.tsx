@@ -38,7 +38,7 @@ function typeBadge(
     );
   }
   return (
-    <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10">
+    <Badge variant="outline" className="border-brand/40 bg-brand/10">
       Задание
     </Badge>
   );

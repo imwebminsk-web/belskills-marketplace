@@ -1041,7 +1041,7 @@ export function CreateTestForm({
           className={cn(
             "px-4 py-2 text-sm font-medium shadow-sm",
             pointsMatch
-              ? "border-green-600 bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200"
+              ? "border-brand bg-brand/10 text-brand dark:bg-brand/20"
               : "border-destructive bg-destructive/10 text-destructive",
           )}
         >
