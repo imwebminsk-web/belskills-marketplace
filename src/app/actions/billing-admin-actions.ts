@@ -56,7 +56,7 @@ export async function approveBillingRequest(
 
   const { data: request, error: fetchError } = await auth.supabase
     .from("billing_requests")
-    .select("id, organization_id, tier_id, period_months, status")
+    .select("id, organization_id, tier_id, period_months, status, coupon_id")
     .eq("id", parsedId.data)
     .maybeSingle();
 
@@ -122,6 +122,20 @@ export async function approveBillingRequest(
       success: false,
       error: `Не удалось активировать подписку: ${historyError.message}`,
     };
+  }
+
+  if (request.coupon_id) {
+    const { error: couponIncrementError } = await auth.supabase.rpc(
+      "increment_coupon_used_count",
+      { p_coupon_id: request.coupon_id },
+    );
+
+    if (couponIncrementError) {
+      console.error(
+        "[approveBillingRequest] increment_coupon_used_count",
+        couponIncrementError.message,
+      );
+    }
   }
 
   revalidatePath("/dashboard/admin/invoices");

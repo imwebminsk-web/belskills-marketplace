@@ -115,6 +115,7 @@ export default async function InvoiceDetailPage({ params }: InvoicePageProps) {
         iban,
         bic,
         unp,
+        description,
         subscription_tiers (
           name
         )
@@ -154,6 +155,9 @@ export default async function InvoiceDetailPage({ params }: InvoicePageProps) {
 
   const tier = request.subscription_tiers as { name: string } | null;
   const tierName = tier?.name?.trim() || request.tier_id;
+  const lineDescription =
+    request.description?.trim() ||
+    `Доступ к платформе BelSkills по тарифу ${tierName} (${request.period_months} мес.)`;
   const amountRubles = kopecksToAmountRubles(request.amount_kopecks);
   const amountDisplay = formatAmountDisplay(request.amount_kopecks);
   const signatureSrc = resolveSignatureSrc(platform.signature_image_base64);
@@ -286,8 +290,7 @@ export default async function InvoiceDetailPage({ params }: InvoicePageProps) {
             <tbody>
               <tr>
                 <td className="border border-black px-2 py-1">
-                  Доступ к платформе BelSkills по тарифу {tierName} (
-                  {request.period_months} мес.)
+                  {lineDescription}
                 </td>
                 <td className="border border-black px-2 py-1 text-center">
                   {amountDisplay}

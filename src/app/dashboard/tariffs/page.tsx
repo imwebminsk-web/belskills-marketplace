@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { TariffsClient } from "@/components/dashboard/tariffs/tariffs-client";
 import { SiteHeader } from "@/components/site-header";
+import { organizationHasPendingInvoice } from "@/lib/billing/checkout-rules";
 import {
   EMPTY_SUBSCRIPTION_STATE,
   getOrganizationSubscriptionStateSafe,
@@ -54,6 +55,13 @@ export default async function DashboardTariffsPage() {
     ? await getOrganizationSubscriptionStateSafe(primaryTenant.organizationId)
     : EMPTY_SUBSCRIPTION_STATE;
 
+  const hasPendingInvoice = primaryTenant
+    ? await organizationHasPendingInvoice(
+        supabase,
+        primaryTenant.organizationId,
+      )
+    : false;
+
   const displayName =
     profile.full_name?.trim() ||
     user.email?.split("@")[0] ||
@@ -74,6 +82,7 @@ export default async function DashboardTariffsPage() {
           <TariffsClient
             tariffs={tariffs ?? []}
             subscriptionState={subscriptionState}
+            hasPendingInvoice={hasPendingInvoice}
           />
         </div>
       </div>

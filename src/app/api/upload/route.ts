@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
 
+const EDITOR_UPLOAD_BUCKET = "course-content";
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/jpeg",
@@ -58,8 +59,10 @@ export async function POST(request: Request) {
   const objectPath = `${user.id}/editor/${randomUUID()}.${ext}`;
   const body = await file.arrayBuffer();
 
+  console.log("DEBUG [api/upload]: Storage bucket:", EDITOR_UPLOAD_BUCKET);
+
   const { error: uploadError } = await supabase.storage
-    .from("course-content")
+    .from(EDITOR_UPLOAD_BUCKET)
     .upload(objectPath, body, {
       contentType: file.type,
       cacheControl: "3600",
@@ -75,7 +78,7 @@ export async function POST(request: Request) {
 
   const {
     data: { publicUrl },
-  } = supabase.storage.from("course-content").getPublicUrl(objectPath);
+  } = supabase.storage.from(EDITOR_UPLOAD_BUCKET).getPublicUrl(objectPath);
 
   return NextResponse.json({ url: publicUrl });
 }

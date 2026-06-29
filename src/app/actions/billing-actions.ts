@@ -5,6 +5,13 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { loadAuthContext } from "@/lib/auth/access";
+import { resolveCouponForCheckout } from "@/app/actions/coupon-actions";
+import {
+  buildBillingDescription,
+  organizationHasPendingInvoice,
+  PENDING_INVOICE_MESSAGE,
+  userHasPendingInvoice,
+} from "@/lib/billing/checkout-rules";
 import { getPrimaryActiveStaffTenant } from "@/lib/auth/tenant";
 import {
   calculateTierTotalKopecks,
@@ -31,6 +38,9 @@ const billingRequestSchema = z
     directorName: z.string().trim().optional(),
     directorPosition: z.string().trim().optional(),
     basisOfAuthority: z.string().trim().optional(),
+    couponId: z
+      .union([z.string().uuid(), z.literal(""), z.null(), z.undefined()])
+      .transform((value) => (value ? value : undefined)),
   })
   .superRefine((data, ctx) => {
     if (data.paymentMethod !== "bank_transfer") {
@@ -104,6 +114,7 @@ export async function submitBillingRequest(
     directorName: formData.get("directorName") ?? undefined,
     directorPosition: formData.get("directorPosition") ?? undefined,
     basisOfAuthority: formData.get("basisOfAuthority") ?? undefined,
+    couponId: formData.get("couponId") ?? undefined,
   });
 
   if (!parsed.success) {
@@ -119,10 +130,19 @@ export async function submitBillingRequest(
     return { success: false, error: "Организация не совпадает с вашей школой" };
   }
 
+  const [userPending, orgPending] = await Promise.all([
+    userHasPendingInvoice(supabase, user.id),
+    organizationHasPendingInvoice(supabase, data.organizationId),
+  ]);
+
+  if (userPending || orgPending) {
+    return { success: false, error: PENDING_INVOICE_MESSAGE };
+  }
+
   const { data: tier, error: tierError } = await supabase
     .from("subscription_tiers")
     .select(
-      "id, price_monthly, discount_3_months, discount_6_months, discount_12_months, is_active",
+      "id, name, price_monthly, discount_3_months, discount_6_months, discount_12_months, is_active",
     )
     .eq("id", data.tierId)
     .maybeSingle();
@@ -135,10 +155,37 @@ export async function submitBillingRequest(
     return { success: false, error: "Этот тариф недоступен для оплаты" };
   }
 
-  const amountKopecks = calculateTierTotalKopecks(
+  let amountKopecks = calculateTierTotalKopecks(
     tier.price_monthly,
     period,
     tier,
+  );
+
+  let couponId: string | null = null;
+  let couponCode: string | null = null;
+
+  if (data.couponId) {
+    const couponResult = await resolveCouponForCheckout(
+      supabase,
+      data.couponId,
+      amountKopecks,
+      user.id,
+    );
+
+    if (!couponResult.success) {
+      return { success: false, error: couponResult.error };
+    }
+
+    amountKopecks = couponResult.amountKopecks;
+    couponId = couponResult.couponId;
+    couponCode = couponResult.code;
+  }
+
+  const tierName = tier.name?.trim() || data.tierId;
+  const description = buildBillingDescription(
+    tierName,
+    period,
+    couponCode,
   );
 
   const isBank = data.paymentMethod === "bank_transfer";
@@ -151,6 +198,9 @@ export async function submitBillingRequest(
       period_months: period,
       amount_kopecks: amountKopecks,
       payment_method: data.paymentMethod,
+      coupon_id: couponId,
+      created_by: user.id,
+      description,
       unp: isBank ? data.unp! : null,
       company_name: isBank ? data.companyName! : null,
       legal_address: isBank ? data.legalAddress! : null,

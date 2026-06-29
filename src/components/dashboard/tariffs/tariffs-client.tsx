@@ -4,8 +4,11 @@ import { useMemo, useState } from "react";
 
 import type { TariffRow } from "@/app/actions/tariff-actions";
 import { TariffCard } from "@/components/dashboard/tariffs/tariff-card";
-import type { BillingPeriod } from "@/lib/utils/pricing";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import type { OrganizationSubscriptionState } from "@/lib/auth/tenant";
+import { PENDING_INVOICE_MESSAGE } from "@/lib/billing/checkout-rules";
 import { cn } from "@/lib/utils";
+import type { BillingPeriod } from "@/lib/utils/pricing";
 
 export type { BillingPeriod };
 
@@ -45,11 +48,13 @@ function periodToggleLabel(tariffs: TariffRow[], period: BillingPeriod): string 
 type TariffsClientProps = {
   tariffs: TariffRow[];
   subscriptionState: OrganizationSubscriptionState;
+  hasPendingInvoice: boolean;
 };
 
 export function TariffsClient({
   tariffs,
   subscriptionState,
+  hasPendingInvoice,
 }: TariffsClientProps) {
   const [tariffType, setTariffType] = useState<TariffType>("paid");
   const [period, setPeriod] = useState<BillingPeriod>(1);
@@ -90,6 +95,12 @@ export function TariffsClient({
 
   return (
     <div className="flex flex-col gap-10">
+      {hasPendingInvoice ? (
+        <Alert variant="destructive">
+          <AlertDescription>{PENDING_INVOICE_MESSAGE}</AlertDescription>
+        </Alert>
+      ) : null}
+
       <div className="flex flex-col items-center gap-6">
         <div className="bg-muted/60 inline-flex rounded-full p-1.5 shadow-sm">
           <button
@@ -164,6 +175,7 @@ export function TariffsClient({
               currentTierId={subscriptionState.currentTierId}
               currentTierPrice={currentTierPrice}
               hasUsedTrial={subscriptionState.hasUsedTrial}
+              hasPendingInvoice={hasPendingInvoice}
             />
           ))}
         </div>

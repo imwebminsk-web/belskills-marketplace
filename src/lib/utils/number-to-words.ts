@@ -146,6 +146,16 @@ export function numberToWordsRu(value: number): string {
   return parts.join(" ").replace(/\s+/g, " ").trim();
 }
 
+/** Words only: "триста пятьдесят белорусских рублей 00 копеек". */
+export function formatAmountInWordsRubles(amountRubles: number): string {
+  const rubles = Math.floor(amountRubles);
+  const kopecks = Math.round((amountRubles - rubles) * 100);
+  const rublesWords = numberToWordsRu(rubles);
+  const kopStr = String(kopecks).padStart(2, "0");
+
+  return `${rublesWords} белорусских рублей ${kopStr} копеек`;
+}
+
 /** Formats invoice sum: "350.00 р. (триста пятьдесят белорусских рублей 00 копеек)". */
 export function formatInvoiceSum(amountRubles: number): string {
   const rubles = Math.floor(amountRubles);

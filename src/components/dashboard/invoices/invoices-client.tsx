@@ -22,6 +22,20 @@ type InvoicesClientProps = {
   invoices: InvoiceRow[];
 };
 
+/** Active tab = tariff-card «Улучшить»: h-11 text-base font-semibold bg-brand text-brand-foreground hover:bg-brand/90 */
+const invoiceTabTriggerClass = cn(
+  "inline-flex flex-1 items-center justify-center rounded-lg border-none shadow-none transition-all",
+  "h-11 text-base font-semibold",
+  "outline-none ring-0 focus-visible:ring-0 focus-visible:outline-none",
+  "before:hidden before:content-none after:hidden after:content-none",
+  "min-h-0 px-4 py-0 text-muted-foreground hover:text-foreground",
+  "bg-transparent hover:bg-muted",
+  "group-data-[variant=default]/tabs-list:data-active:!shadow-none group-data-[variant=line]/tabs-list:data-active:!shadow-none",
+  "data-[state=active]:border-none data-[state=active]:shadow-none",
+  "data-[state=active]:!bg-brand data-[state=active]:!text-brand-foreground data-[state=active]:hover:!bg-brand/90",
+  "data-active:!bg-brand data-active:!text-brand-foreground data-active:hover:!bg-brand/90",
+);
+
 function formatInvoiceDate(iso: string): string {
   return new Intl.DateTimeFormat("ru-RU", {
     day: "2-digit",
@@ -38,6 +52,9 @@ function formatPeriodLabel(months: number): string {
 }
 
 function formatDescription(invoice: InvoiceRow): string {
+  if (invoice.description?.trim()) {
+    return invoice.description.trim();
+  }
   return `Оплата тарифа ${invoice.tierName} (${formatPeriodLabel(invoice.periodMonths)})`;
 }
 
@@ -72,19 +89,18 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export function InvoicesClient({ invoices }: InvoicesClientProps) {
+  const paidInvoices = invoices.filter((invoice) => invoice.status === "paid");
+
   return (
     <Tabs defaultValue="invoices" className="w-full">
-      <TabsList className="grid w-full max-w-md grid-cols-2 rounded-lg bg-muted p-1">
-        <TabsTrigger
-          value="invoices"
-          className="rounded-md transition-all data-[state=active]:bg-brand data-[state=active]:text-white data-active:bg-brand data-active:text-white"
-        >
+      <TabsList
+        variant="line"
+        className="flex h-auto w-full max-w-md gap-2 rounded-none p-0"
+      >
+        <TabsTrigger value="invoices" className={invoiceTabTriggerClass}>
           Счета
         </TabsTrigger>
-        <TabsTrigger
-          value="acts"
-          className="rounded-md transition-all data-[state=active]:bg-brand data-[state=active]:text-white data-active:bg-brand data-active:text-white"
-        >
+        <TabsTrigger value="acts" className={invoiceTabTriggerClass}>
           Акты
         </TabsTrigger>
       </TabsList>
@@ -146,9 +162,64 @@ export function InvoicesClient({ invoices }: InvoicesClientProps) {
       </TabsContent>
 
       <TabsContent value="acts" className="mt-6">
-        <div className="text-muted-foreground rounded-lg border border-dashed py-16 text-center text-sm">
-          Здесь пока пусто
-        </div>
+        {paidInvoices.length === 0 ? (
+          <div className="text-muted-foreground rounded-lg border border-dashed py-16 text-center text-sm">
+            У вас пока нет оплаченных счетов. Акты формируются только после
+            оплаты.
+          </div>
+        ) : (
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Дата</TableHead>
+                  <TableHead>№ Акта</TableHead>
+                  <TableHead>Описание</TableHead>
+                  <TableHead className="text-right">Сумма</TableHead>
+                  <TableHead>Статус</TableHead>
+                  <TableHead className="text-right">Действие</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paidInvoices.map((invoice) => (
+                  <TableRow key={invoice.id}>
+                    <TableCell className="whitespace-nowrap">
+                      {formatInvoiceDate(invoice.createdAt)}
+                    </TableCell>
+                    <TableCell className="font-mono text-sm whitespace-nowrap">
+                      {formatInvoiceNumber(invoice.invoiceNumber)}
+                    </TableCell>
+                    <TableCell className="max-w-[16rem] truncate sm:max-w-none">
+                      {formatDescription(invoice)}
+                    </TableCell>
+                    <TableCell className="text-right font-medium whitespace-nowrap">
+                      {formatPriceByn(invoice.amountKopecks)}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={invoice.status} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        asChild
+                        variant="secondary"
+                        size="sm"
+                        className={cn("shrink-0")}
+                      >
+                        <Link
+                          href={`/dashboard/acts/${invoice.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Скачать акт
+                        </Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </TabsContent>
     </Tabs>
   );

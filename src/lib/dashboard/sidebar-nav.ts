@@ -9,6 +9,8 @@ import {
   LifeBuoyIcon,
   ReceiptTextIcon,
   SettingsIcon,
+  StoreIcon,
+  TicketIcon,
   Users,
   UsersIcon,
   Wallet,
@@ -48,6 +50,11 @@ export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
         url: "/dashboard/admin/invoices",
         icon: Wallet,
       },
+      {
+        title: "Промокоды",
+        url: "/dashboard/admin/coupons",
+        icon: TicketIcon,
+      },
       { title: "Поддержка", url: "/dashboard/support", icon: LifeBuoyIcon },
     ];
   }
@@ -57,6 +64,16 @@ export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
       { title: "Группы", url: "/dashboard/cohorts", icon: UsersIcon },
       { title: "Ученики", url: "/dashboard/students", icon: Users },
       { title: "Тесты", url: "/dashboard/tests", icon: CheckSquare },
+      {
+        title: "Учебный центр",
+        url: "/dashboard/learning-center",
+        icon: StoreIcon,
+      },
+      {
+        title: "Курсы",
+        url: "/dashboard/learning-center/courses",
+        icon: LibraryIcon,
+      },
       {
         title: "Тарифы",
         url: "/dashboard/tariffs",

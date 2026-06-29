@@ -5,7 +5,7 @@ import { ImagePlusIcon, Loader2Icon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import {
-  updateCourse,
+  updateCourseSettings,
   uploadCourseGalleryImage,
   type UpdateCourseState,
 } from "@/app/actions/course-actions";
@@ -123,7 +123,7 @@ export function CourseSettingsForm({
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const [galleryBusy, setGalleryBusy] = useState(false);
   const [state, formAction, isPending] = useActionState(
-    updateCourse,
+    updateCourseSettings,
     initialState,
   );
 

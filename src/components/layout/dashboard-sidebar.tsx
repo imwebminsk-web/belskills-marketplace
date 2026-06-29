@@ -3,7 +3,7 @@
 import type { ComponentType, SVGProps } from "react";
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { CreditCard, ReceiptText, Settings, Wallet } from "lucide-react"
+import { CreditCard, ReceiptText, Settings, Store, Ticket, Wallet } from "lucide-react"
 
 import { signOut } from "@/app/actions/auth-actions"
 import { useLanguage } from "@/components/providers/language-provider"
@@ -40,6 +40,7 @@ const teacherNav: NavItem[] = [
   { title: "Группы", url: "/dashboard/cohorts", icon: GrowvyGroupsIcon },
   { title: "Ученики", url: "/dashboard/students", icon: GrowvyStudentsIcon },
   { title: "Тесты", url: "/dashboard/tests", icon: GrowvyTestsIcon },
+  { title: "Учебный центр", url: "/dashboard/learning-center", icon: Store },
   { title: "Тарифы", url: "/dashboard/tariffs", icon: CreditCard },
   { title: "Счета и акты", url: "/dashboard/invoices", icon: ReceiptText },
   { title: "Поддержка", url: "/dashboard/support", icon: GrowvySupportIcon },
@@ -87,6 +88,11 @@ const adminNav: NavItem[] = [
     title: "Счета клиентов",
     url: "/dashboard/admin/invoices",
     icon: Wallet,
+  },
+  {
+    title: "Промокоды",
+    url: "/dashboard/admin/coupons",
+    icon: Ticket,
   },
   { title: "Поддержка", url: "/dashboard/support", icon: GrowvySupportIcon },
 ];

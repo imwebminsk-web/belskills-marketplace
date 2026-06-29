@@ -1,8 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-import { ExternalLinkIcon, MoreHorizontalIcon } from "lucide-react";
+import { useMemo, useState, useTransition } from "react";
+import {
+  Check,
+  ExternalLinkIcon,
+  FileText,
+  MoreHorizontalIcon,
+  X,
+} from "lucide-react";
 
 import {
   approveBillingRequest,
@@ -18,6 +25,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -28,11 +43,12 @@ import {
 } from "@/components/ui/table";
 import { formatPriceByn } from "@/lib/utils/pricing";
 import { formatInvoiceNumber } from "@/lib/utils/invoice-format";
-import { cn } from "@/lib/utils";
 
 type InvoicesAdminClientProps = {
   initialRequests: AdminBillingRequestRow[];
 };
+
+type StatusFilter = "all" | "pending" | "paid" | "cancelled";
 
 function formatDate(iso: string): string {
   return new Intl.DateTimeFormat("ru-RU", {
@@ -85,9 +101,55 @@ export function InvoicesAdminClient({
 }: InvoicesAdminClientProps) {
   const router = useRouter();
   const [requests, setRequests] = useState(initialRequests);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [tariffFilter, setTariffFilter] = useState("all");
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const tariffOptions = useMemo(() => {
+    const tiers = new Map<string, string>();
+    for (const row of requests) {
+      tiers.set(row.tierId, row.tierName);
+    }
+    return Array.from(tiers.entries()).sort(([, a], [, b]) =>
+      a.localeCompare(b, "ru"),
+    );
+  }, [requests]);
+
+  const filteredRequests = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return [...requests]
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      )
+      .filter((row) => {
+        if (statusFilter !== "all" && row.status !== statusFilter) {
+          return false;
+        }
+
+        if (tariffFilter !== "all" && row.tierId !== tariffFilter) {
+          return false;
+        }
+
+        if (!query) {
+          return true;
+        }
+
+        const company = (row.companyName?.trim() ?? "").toLowerCase();
+        const formattedNumber = formatInvoiceNumber(row.invoiceNumber).toLowerCase();
+        const rawNumber = String(row.invoiceNumber);
+
+        return (
+          company.includes(query) ||
+          formattedNumber.includes(query) ||
+          rawNumber.includes(query)
+        );
+      });
+  }, [requests, search, statusFilter, tariffFilter]);
 
   function handleApprove(requestId: string) {
     setActionError(null);
@@ -145,6 +207,44 @@ export function InvoicesAdminClient({
         </p>
       ) : null}
 
+      <div className="flex flex-wrap items-center gap-4">
+        <Input
+          type="search"
+          placeholder="Поиск по компании или № счета..."
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          className="w-full max-w-sm"
+          aria-label="Поиск по компании или номеру счёта"
+        />
+        <Select
+          value={statusFilter}
+          onValueChange={(value) => setStatusFilter(value as StatusFilter)}
+        >
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Все статусы" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все статусы</SelectItem>
+            <SelectItem value="pending">Ожидает оплаты</SelectItem>
+            <SelectItem value="paid">Оплачен</SelectItem>
+            <SelectItem value="cancelled">Отменен</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={tariffFilter} onValueChange={setTariffFilter}>
+          <SelectTrigger className="w-[200px]">
+            <SelectValue placeholder="Все тарифы" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все тарифы</SelectItem>
+            {tariffOptions.map(([tierId, tierName]) => (
+              <SelectItem key={tierId} value={tierId}>
+                {tierName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       <div className="rounded-lg border">
         <Table>
           <TableHeader>
@@ -159,17 +259,19 @@ export function InvoicesAdminClient({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {requests.length === 0 ? (
+            {filteredRequests.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={7}
                   className="text-muted-foreground h-24 text-center text-sm"
                 >
-                  Заявок на оплату пока нет.
+                  {requests.length === 0
+                    ? "Заявок на оплату пока нет."
+                    : "Ничего не найдено по выбранным фильтрам."}
                 </TableCell>
               </TableRow>
             ) : (
-              requests.map((row) => {
+              filteredRequests.map((row) => {
                 const busy = rowBusy(row.id);
 
                 return (
@@ -193,67 +295,69 @@ export function InvoicesAdminClient({
                       <StatusBadge status={row.status} />
                     </TableCell>
                     <TableCell className="text-right">
-                      {row.status === "pending" ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="size-8"
-                              disabled={busy}
-                              aria-label="Действия со счётом"
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            disabled={busy}
+                            aria-label="Действия со счётом"
+                          >
+                            <MoreHorizontalIcon className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56">
+                          {row.status === "pending" ? (
+                            <>
+                              <DropdownMenuItem
+                                className="cursor-pointer"
+                                disabled={busy}
+                                onClick={() => handleApprove(row.id)}
+                              >
+                                <Check className="text-emerald-500" />
+                                {busy ? "Обработка…" : "Подтвердить оплату"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="cursor-pointer"
+                                disabled={busy}
+                                onClick={() => handleCancel(row.id)}
+                              >
+                                <X className="text-destructive" />
+                                Отменить
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                            </>
+                          ) : null}
+                          <DropdownMenuItem asChild>
+                            <a
+                              href={`/dashboard/invoices/${row.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex cursor-pointer items-center gap-1.5"
                             >
-                              <MoreHorizontalIcon className="size-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-56">
-                            <DropdownMenuItem
-                              className={cn(
-                                "text-brand focus:text-brand cursor-pointer",
-                              )}
-                              disabled={busy}
-                              onClick={() => handleApprove(row.id)}
-                            >
-                              {busy ? "Обработка…" : "✅ Подтвердить оплату"}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive cursor-pointer"
-                              disabled={busy}
-                              onClick={() => handleCancel(row.id)}
-                            >
-                              ❌ Отменить
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
+                              <FileText className="text-muted-foreground" />
+                              Посмотреть счёт
+                              <ExternalLinkIcon className="ml-auto size-3.5 opacity-60" />
+                            </a>
+                          </DropdownMenuItem>
+                          {row.status === "paid" ? (
                             <DropdownMenuItem asChild>
-                              <a
-                                href={`/dashboard/invoices/${row.id}`}
+                              <Link
+                                href={`/dashboard/acts/${row.id}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex cursor-pointer items-center gap-2"
+                                className="flex cursor-pointer items-center gap-1.5"
                               >
-                                📄 Посмотреть счёт
-                                <ExternalLinkIcon className="size-3.5 opacity-60" />
-                              </a>
+                                <FileText className="text-muted-foreground" />
+                                Скачать акт
+                                <ExternalLinkIcon className="ml-auto size-3.5 opacity-60" />
+                              </Link>
                             </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          asChild
-                        >
-                          <a
-                            href={`/dashboard/invoices/${row.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            📄 Счёт
-                          </a>
-                        </Button>
-                      )}
+                          ) : null}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 );

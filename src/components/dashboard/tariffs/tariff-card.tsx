@@ -22,6 +22,7 @@ type TariffCardProps = {
   currentTierId: string | null;
   currentTierPrice: number;
   hasUsedTrial: boolean;
+  hasPendingInvoice?: boolean;
 };
 
 type TariffButtonState = {
@@ -117,6 +118,7 @@ export function TariffCard({
   currentTierId,
   currentTierPrice,
   hasUsedTrial,
+  hasPendingInvoice = false,
 }: TariffCardProps) {
   const discountPercent = getDiscountPercent(tariff, period);
   const monthlyRubles = getDiscountedPriceInRubles(
@@ -141,7 +143,8 @@ export function TariffCard({
     buttonState.useBrand &&
     !buttonState.disabled &&
     tariff.price_monthly > 0 &&
-    tariff.id !== "trial";
+    tariff.id !== "trial" &&
+    !hasPendingInvoice;
 
   const checkoutHref = `/dashboard/checkout?tier=${encodeURIComponent(tariff.id)}&period=${period}`;
 
@@ -247,7 +250,19 @@ export function TariffCard({
       </CardContent>
 
       <CardFooter className="mt-auto border-t px-5 py-5">
-        {isPaidAction ? (
+        {hasPendingInvoice &&
+        buttonState.useBrand &&
+        !buttonState.disabled &&
+        tariff.price_monthly > 0 &&
+        tariff.id !== "trial" ? (
+          <Button
+            type="button"
+            disabled
+            className="h-11 w-full text-base font-semibold"
+          >
+            Ожидает оплаты счёта
+          </Button>
+        ) : isPaidAction ? (
           <Button
             asChild
             className={cn(

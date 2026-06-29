@@ -23,6 +23,7 @@ export type InvoiceRow = {
   amountKopecks: number;
   paymentMethod: string;
   status: string;
+  description: string | null;
 };
 
 export default async function InvoicesPage() {
@@ -54,6 +55,7 @@ export default async function InvoicesPage() {
         amount_kopecks,
         payment_method,
         status,
+        description,
         subscription_tiers (
           name
         )
@@ -80,6 +82,7 @@ export default async function InvoicesPage() {
       amountKopecks: row.amount_kopecks,
       paymentMethod: row.payment_method,
       status: row.status,
+      description: row.description,
     };
   });
 

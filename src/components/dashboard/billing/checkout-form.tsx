@@ -32,6 +32,8 @@ type CheckoutFormProps = {
   tierId: string;
   period: BillingPeriod;
   initialB2BDetails?: B2BBillingDetails | null;
+  couponId?: string | null;
+  disabled?: boolean;
 };
 
 type FormState = {
@@ -106,6 +108,8 @@ export function CheckoutForm({
   tierId,
   period,
   initialB2BDetails,
+  couponId,
+  disabled = false,
 }: CheckoutFormProps) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
   const isBank = paymentMethod === "bank_transfer";
@@ -185,6 +189,9 @@ export function CheckoutForm({
       <input type="hidden" name="tierId" value={tierId} />
       <input type="hidden" name="periodMonths" value={period} />
       <input type="hidden" name="paymentMethod" value={paymentMethod} />
+      {couponId ? (
+        <input type="hidden" name="couponId" value={couponId} />
+      ) : null}
 
       <Tabs
         value={paymentMethod}
@@ -318,7 +325,7 @@ export function CheckoutForm({
 
       <Button
         type="submit"
-        disabled={pending}
+        disabled={pending || disabled}
         className={cn(
           "h-11 w-full text-base font-semibold",
           "bg-brand text-brand-foreground hover:bg-brand/90",
