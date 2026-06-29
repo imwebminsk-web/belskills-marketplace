@@ -2,9 +2,6 @@
 
 import { compressImage } from "@/lib/utils/image-compression";
 
-/** Целевой потолок после клиентского сжатия (как в галерее курсов). */
-export const UPLOAD_COMPRESSED_MAX_BYTES = 100 * 1024;
-
 async function postImageToUploadApi(
   file: File,
 ): Promise<{ url: string } | { error: string }> {
@@ -30,21 +27,12 @@ async function postImageToUploadApi(
 }
 
 /**
- * Сжимает изображение через `compressImage` (~100 КБ) и загружает на `/api/upload`.
- * Использует ту же утилиту, что галерея курсов и редактор TipTap.
+ * Сжимает изображение через `compressImage` (~100 КБ цель) и загружает на `/api/upload`.
+ * Пост-сжатие не отклоняется по размеру: финальный потолок задаёт API (2 МБ), как у галереи курсов.
  */
 export async function uploadCompressedImageViaApi(
   file: File,
-  options?: { fileLabel?: string },
 ): Promise<{ url: string } | { error: string }> {
   const compressed = await compressImage(file);
-
-  if (compressed.size > UPLOAD_COMPRESSED_MAX_BYTES) {
-    const label = options?.fileLabel ?? file.name;
-    return {
-      error: `${label}: после сжатия файл всё ещё больше 100 КБ.`,
-    };
-  }
-
   return postImageToUploadApi(compressed);
 }

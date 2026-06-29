@@ -45,6 +45,11 @@ export function SlugField({ initialSlug }: SlugFieldProps) {
       return;
     }
 
+    if (!normalizedSlug) {
+      setFieldError("Укажите адрес витрины");
+      return;
+    }
+
     const formatError = validateOrganizationSlug(normalizedSlug);
     if (formatError) {
       setFieldError(formatError);
@@ -68,7 +73,13 @@ export function SlugField({ initialSlug }: SlugFieldProps) {
 
   return (
     <div className="space-y-2">
-      <Label htmlFor="organization_slug">URL учебного центра (slug)</Label>
+      <Label htmlFor="organization_slug">
+        URL учебного центра (slug)
+        <span className="text-destructive" aria-hidden>
+          {" "}
+          *
+        </span>
+      </Label>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
         <div
           className={cn(
@@ -90,6 +101,7 @@ export function SlugField({ initialSlug }: SlugFieldProps) {
             autoComplete="off"
             spellCheck={false}
             placeholder="my-school"
+            required
             disabled={saving}
             aria-invalid={fieldError ? true : undefined}
             className="rounded-none border-0 bg-transparent shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"

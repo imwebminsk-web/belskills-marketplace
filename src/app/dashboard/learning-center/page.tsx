@@ -13,6 +13,7 @@ import {
   hasCreatorOrgAccess,
 } from "@/lib/auth/tenant";
 import { resolveOrganizationBrandName } from "@/lib/organization/showcase-profile";
+import { isProfilePubliclyVisible, parseShowcaseStatus } from "@/lib/organization/profile-status";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
@@ -95,6 +96,14 @@ export default async function LearningCenterPage() {
     primaryTenant.organizationName,
   );
 
+  const profileDeleted = Boolean(organizationProfile?.deleted_at);
+  const profilePublished =
+    organizationProfile &&
+    isProfilePubliclyVisible(
+      parseShowcaseStatus(organizationProfile.status),
+      organizationProfile.deleted_at,
+    );
+
   return (
     <>
       <SiteHeader fullName={displayName} />
@@ -108,10 +117,10 @@ export default async function LearningCenterPage() {
                 » для каталога BelSkills.
               </p>
             </div>
-            {organizationProfile ? (
+            {profilePublished ? (
               <Button asChild variant="outline" className="shrink-0">
                 <Link
-                  href={`/school/${encodeURIComponent(organizationProfile.slug)}`}
+                  href={`/school/${encodeURIComponent(organizationProfile!.slug)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -122,7 +131,15 @@ export default async function LearningCenterPage() {
             ) : null}
           </div>
 
-          {organizationProfile ? (
+          {profileDeleted ? (
+            <div className="text-muted-foreground rounded-lg border border-dashed p-8 text-center text-sm">
+              <p className="text-foreground font-medium">Профиль удалён</p>
+              <p className="mt-2">
+                Публичная витрина скрыта. Для восстановления обратитесь в
+                поддержку BelSkills.
+              </p>
+            </div>
+          ) : organizationProfile ? (
             <ProfileForm
               profile={organizationProfile}
               branches={branches ?? []}

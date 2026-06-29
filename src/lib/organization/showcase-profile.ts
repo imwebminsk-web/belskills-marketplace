@@ -81,20 +81,26 @@ export function parseProfileMessengers(value: Json | null | undefined): {
 
 export const SOCIAL_LINK_KEYS = [
   "instagram",
-  "telegram",
-  "viber",
   "facebook",
   "vk",
+  "ok",
+  "linkedin",
+  "tiktok",
+  "x",
+  "youtube",
 ] as const;
 
 export type SocialLinkKey = (typeof SOCIAL_LINK_KEYS)[number];
 
 export const SOCIAL_LINK_LABELS: Record<SocialLinkKey, string> = {
   instagram: "Instagram",
-  telegram: "Telegram",
-  viber: "Viber",
   facebook: "Facebook",
   vk: "ВКонтакте",
+  ok: "Одноклассники",
+  linkedin: "LinkedIn",
+  tiktok: "TikTok",
+  x: "X (Twitter)",
+  youtube: "YouTube",
 };
 
 export function parseProfileSocialLinks(
@@ -203,16 +209,24 @@ export function normalizePhoneList(
   phones: string[] | null | undefined,
   phoneMain: string | null | undefined,
 ): string[] {
-  const fromArray = (phones ?? [])
-    .map((phone) => phone.trim())
-    .filter((phone) => phone.length > 0);
-
-  if (fromArray.length > 0) {
-    return fromArray;
-  }
+  const result: string[] = [];
+  const seen = new Set<string>();
 
   const main = phoneMain?.trim();
-  return main ? [main] : [];
+  if (main) {
+    result.push(main);
+    seen.add(main);
+  }
+
+  for (const phone of phones ?? []) {
+    const trimmed = phone.trim();
+    if (trimmed.length > 0 && !seen.has(trimmed)) {
+      result.push(trimmed);
+      seen.add(trimmed);
+    }
+  }
+
+  return result;
 }
 
 export function parseProfilePhones(

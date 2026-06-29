@@ -12,11 +12,17 @@ import {
   extractLogoStoragePath,
 } from "@/lib/organization/showcase-profile";
 import {
+  canSubmitProfileForModeration,
+  parseShowcaseStatus,
+  type OrganizationShowcaseStatus,
+} from "@/lib/organization/profile-status";
+import {
   addBranchSchema,
   branchIdSchema,
   organizationLogoPathSchema,
   organizationSlugSchema,
-  updateOrganizationProfileSchema,
+  updateContactsProfileSchema,
+  updateMainProfileSchema,
 } from "@/lib/organization/showcase-profile-schemas";
 import {
   getOrganizationProfileWithBillingLegal,
@@ -36,6 +42,16 @@ export type UpdateOrganizationProfileState = {
   success?: boolean;
 };
 
+export type ProfileModerationState = {
+  error?: string;
+  success?: boolean;
+};
+
+export type SoftDeleteProfileState = {
+  error?: string;
+  success?: boolean;
+};
+
 export type AddBranchState = {
   error?: string;
   success?: boolean;
@@ -44,6 +60,68 @@ export type AddBranchState = {
 const emptyState: UpdateOrganizationProfileState = {};
 const emptyBranchState: AddBranchState = {};
 const LOGOS_BUCKET = "logos";
+
+function readFormText(formData: FormData, name: string): string | null {
+  const value = formData.get(name);
+  if (value == null || typeof value !== "string") {
+    return null;
+  }
+  return value;
+}
+
+function buildMessengersJson(data: {
+  messenger_viber: string | null;
+  messenger_telegram: string | null;
+  messenger_whatsapp: string | null;
+}): Record<string, string> {
+  const messengers: Record<string, string> = {};
+  if (data.messenger_viber) {
+    messengers.viber = data.messenger_viber;
+  }
+  if (data.messenger_telegram) {
+    messengers.telegram = data.messenger_telegram;
+  }
+  if (data.messenger_whatsapp) {
+    messengers.whatsapp = data.messenger_whatsapp;
+  }
+  return messengers;
+}
+
+/** Бренд → юр. название из формы → системное имя организации. */
+async function resolvePublicName(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+  publicName: string | null,
+  legalName: string | null,
+  organizationSystemName: string,
+): Promise<string> {
+  const brand = publicName?.trim();
+  if (brand) {
+    return brand;
+  }
+
+  const legal = legalName?.trim();
+  if (legal) {
+    return legal;
+  }
+
+  const system = organizationSystemName.trim();
+  if (system) {
+    return system;
+  }
+
+  const { data: organization, error } = await supabase
+    .from("organizations")
+    .select("name")
+    .eq("id", organizationId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[resolvePublicName]", error.message);
+  }
+
+  return organization?.name?.trim() || "Учебный центр";
+}
 
 async function requireShowcaseStaff() {
   const supabase = await createClient();
@@ -77,6 +155,47 @@ async function requireShowcaseStaff() {
   return { success: true as const, supabase, primaryTenant };
 }
 
+async function fetchStaffOrganizationProfile(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+) {
+  const { data: profile, error } = await supabase
+    .from("organization_profiles")
+    .select("id, status, deleted_at, unp, legal_name, slug")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[fetchStaffOrganizationProfile]", error.message);
+    return { profile: null, error: "Не удалось загрузить профиль." as const };
+  }
+
+  if (!profile) {
+    return { profile: null, error: "Профиль не найден." as const };
+  }
+
+  if (profile.deleted_at) {
+    return { profile: null, error: "Профиль удалён." as const };
+  }
+
+  return { profile, error: null };
+}
+
+function resolveStatusAfterStaffEdit(
+  currentStatus: OrganizationShowcaseStatus,
+  resubmitToModeration: boolean,
+): OrganizationShowcaseStatus | undefined {
+  if (currentStatus === "blocked") {
+    return undefined;
+  }
+
+  if (currentStatus === "published" && resubmitToModeration) {
+    return "moderation";
+  }
+
+  return undefined;
+}
+
 export async function getOrganizationProfile(
   organizationId: string,
 ): Promise<OrganizationProfileRow | null> {
@@ -107,7 +226,7 @@ export async function getOrganizationProfile(
   );
 }
 
-export async function updateOrganizationProfile(
+export async function updateMainProfile(
   _prev: UpdateOrganizationProfileState,
   formData: FormData,
 ): Promise<UpdateOrganizationProfileState> {
@@ -118,30 +237,38 @@ export async function updateOrganizationProfile(
 
   const { supabase, primaryTenant } = auth;
 
-  const parsed = updateOrganizationProfileSchema.safeParse({
-    public_name: formData.get("public_name"),
-    short_description: formData.get("short_description"),
-    long_description: formData.get("long_description"),
-    cover_url: formData.get("cover_url"),
-    gallery: formData.get("gallery"),
-    unp: formData.get("unp"),
-    legal_name: formData.get("legal_name"),
-    phones: formData.getAll("phones"),
-    social_links: {
-      instagram: formData.get("social_instagram"),
-      telegram: formData.get("social_telegram"),
-      viber: formData.get("social_viber"),
-      facebook: formData.get("social_facebook"),
-      vk: formData.get("social_vk"),
-    },
-    website: formData.get("website"),
-    phone_main: formData.get("phone_main"),
-    messenger_viber: formData.get("messenger_viber"),
-    messenger_telegram: formData.get("messenger_telegram"),
-    messenger_whatsapp: formData.get("messenger_whatsapp"),
+  const profileResult = await fetchStaffOrganizationProfile(
+    supabase,
+    primaryTenant.organizationId,
+  );
+  if (profileResult.error || !profileResult.profile) {
+    return { ...emptyState, error: profileResult.error ?? "Профиль не найден." };
+  }
+
+  const currentStatus = parseShowcaseStatus(profileResult.profile.status);
+  if (currentStatus === "blocked") {
+    return {
+      ...emptyState,
+      error: "Профиль заблокирован. Обратитесь в поддержку.",
+    };
+  }
+
+  const parsed = updateMainProfileSchema.safeParse({
+    public_name: readFormText(formData, "public_name"),
+    short_description: readFormText(formData, "short_description"),
+    long_description: readFormText(formData, "long_description"),
+    cover_url: readFormText(formData, "cover_url"),
+    gallery: readFormText(formData, "gallery"),
+    unp: readFormText(formData, "unp") ?? "",
+    legal_name: readFormText(formData, "legal_name") ?? "",
+    resubmit_to_moderation: readFormText(formData, "resubmit_to_moderation") ?? "",
   });
 
   if (!parsed.success) {
+    console.error(
+      "Zod Validation Failed! Issues:",
+      JSON.stringify(parsed.error.issues, null, 2),
+    );
     return {
       ...emptyState,
       error: parsed.error.issues[0]?.message ?? "Некорректные данные формы",
@@ -150,33 +277,36 @@ export async function updateOrganizationProfile(
 
   const data = parsed.data;
 
-  const messengers = {
-    viber: data.messenger_viber ?? "",
-    telegram: data.messenger_telegram ?? "",
-    whatsapp: data.messenger_whatsapp ?? "",
-  };
+  const publicName = await resolvePublicName(
+    supabase,
+    primaryTenant.organizationId,
+    data.public_name,
+    data.legal_name,
+    primaryTenant.organizationName,
+  );
+
+  const nextStatus = resolveStatusAfterStaffEdit(
+    currentStatus,
+    data.resubmit_to_moderation,
+  );
 
   const { error } = await supabase
     .from("organization_profiles")
     .update({
-      public_name: data.public_name,
+      public_name: publicName,
       short_description: data.short_description,
       long_description: data.long_description,
       cover_url: data.cover_url,
       gallery: data.gallery,
       unp: data.unp,
       legal_name: data.legal_name,
-      phones: data.phones,
-      social_links: data.social_links,
-      website: data.website,
-      phone_main: data.phone_main,
-      messengers,
+      ...(nextStatus ? { status: nextStatus } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq("organization_id", primaryTenant.organizationId);
 
   if (error) {
-    console.error("[updateOrganizationProfile]", error.message);
+    console.error("[updateMainProfile]", error.message);
     return { ...emptyState, error: "Не удалось сохранить профиль. Попробуйте позже." };
   }
 
@@ -188,8 +318,316 @@ export async function updateOrganizationProfile(
   revalidatePath("/dashboard/learning-center");
   revalidatePath("/dashboard/checkout");
   revalidatePath("/dashboard/invoices");
+  if (profileResult.profile.slug) {
+    revalidatePath(`/school/${profileResult.profile.slug}`);
+  }
 
   return { success: true };
+}
+
+export async function updateContactsProfile(
+  _prev: UpdateOrganizationProfileState,
+  formData: FormData,
+): Promise<UpdateOrganizationProfileState> {
+  const auth = await requireShowcaseStaff();
+  if (!auth.success) {
+    return { ...emptyState, error: auth.error };
+  }
+
+  const { supabase, primaryTenant } = auth;
+
+  const profileResult = await fetchStaffOrganizationProfile(
+    supabase,
+    primaryTenant.organizationId,
+  );
+  if (profileResult.error || !profileResult.profile) {
+    return { ...emptyState, error: profileResult.error ?? "Профиль не найден." };
+  }
+
+  const currentStatus = parseShowcaseStatus(profileResult.profile.status);
+  if (currentStatus === "blocked") {
+    return {
+      ...emptyState,
+      error: "Профиль заблокирован. Обратитесь в поддержку.",
+    };
+  }
+
+  const parsed = updateContactsProfileSchema.safeParse({
+    website: readFormText(formData, "website"),
+    phone_main: readFormText(formData, "phone_main"),
+    phones: formData.getAll("phones"),
+    social_links: {
+      instagram: readFormText(formData, "social_instagram"),
+      facebook: readFormText(formData, "social_facebook"),
+      vk: readFormText(formData, "social_vk"),
+      ok: readFormText(formData, "social_ok"),
+      linkedin: readFormText(formData, "social_linkedin"),
+      tiktok: readFormText(formData, "social_tiktok"),
+      x: readFormText(formData, "social_x"),
+      youtube: readFormText(formData, "social_youtube"),
+    },
+    messenger_viber: readFormText(formData, "messenger_viber"),
+    messenger_telegram: readFormText(formData, "messenger_telegram"),
+    messenger_whatsapp: readFormText(formData, "messenger_whatsapp"),
+    resubmit_to_moderation: readFormText(formData, "resubmit_to_moderation") ?? "",
+  });
+
+  if (!parsed.success) {
+    console.error(
+      "Zod Validation Failed! Issues:",
+      JSON.stringify(parsed.error.issues, null, 2),
+    );
+    return {
+      ...emptyState,
+      error: parsed.error.issues[0]?.message ?? "Некорректные данные формы",
+    };
+  }
+
+  const data = parsed.data;
+  const messengers = buildMessengersJson(data);
+
+  const nextStatus = resolveStatusAfterStaffEdit(
+    currentStatus,
+    data.resubmit_to_moderation,
+  );
+
+  const { error } = await supabase
+    .from("organization_profiles")
+    .update({
+      website: data.website,
+      phone_main: data.phone_main,
+      phones: data.phones,
+      social_links: data.social_links,
+      messengers,
+      ...(nextStatus ? { status: nextStatus } : {}),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("organization_id", primaryTenant.organizationId);
+
+  if (error) {
+    console.error("[updateContactsProfile]", error.message);
+    return { ...emptyState, error: "Не удалось сохранить контакты. Попробуйте позже." };
+  }
+
+  revalidatePath("/dashboard/learning-center");
+  if (profileResult.profile.slug) {
+    revalidatePath(`/school/${profileResult.profile.slug}`);
+  }
+
+  return { success: true };
+}
+
+const emptyModerationState: ProfileModerationState = {};
+
+export async function submitProfileForModeration(
+  _prev: ProfileModerationState,
+): Promise<ProfileModerationState> {
+  const auth = await requireShowcaseStaff();
+  if (!auth.success) {
+    return { ...emptyModerationState, error: auth.error };
+  }
+
+  const { supabase, primaryTenant } = auth;
+
+  const profileResult = await fetchStaffOrganizationProfile(
+    supabase,
+    primaryTenant.organizationId,
+  );
+  if (profileResult.error || !profileResult.profile) {
+    return {
+      ...emptyModerationState,
+      error: profileResult.error ?? "Профиль не найден.",
+    };
+  }
+
+  const profile = profileResult.profile;
+  const currentStatus = parseShowcaseStatus(profile.status);
+
+  if (currentStatus === "blocked") {
+    return {
+      ...emptyModerationState,
+      error: "Профиль заблокирован. Обратитесь в поддержку.",
+    };
+  }
+
+  if (currentStatus === "moderation") {
+    return {
+      ...emptyModerationState,
+      error: "Профиль уже на модерации.",
+    };
+  }
+
+  if (currentStatus === "published" || currentStatus === "hidden") {
+    return {
+      ...emptyModerationState,
+      error: "Профиль уже опубликован. Измените данные, чтобы отправить на повторную проверку.",
+    };
+  }
+
+  if (!canSubmitProfileForModeration(profile)) {
+    return {
+      ...emptyModerationState,
+      error: "Заполните УНП, юридическое название и адрес витрины перед отправкой.",
+    };
+  }
+
+  const { error } = await supabase
+    .from("organization_profiles")
+    .update({
+      status: "moderation",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("organization_id", primaryTenant.organizationId);
+
+  if (error) {
+    console.error("[submitProfileForModeration]", error.message);
+    return {
+      ...emptyModerationState,
+      error: "Не удалось отправить профиль на проверку.",
+    };
+  }
+
+  revalidatePath("/dashboard/learning-center");
+  if (profile.slug) {
+    revalidatePath(`/school/${profile.slug}`);
+  }
+
+  return { success: true };
+}
+
+export async function setProfileVisibility(
+  visible: boolean,
+): Promise<ProfileModerationState> {
+  const auth = await requireShowcaseStaff();
+  if (!auth.success) {
+    return { ...emptyModerationState, error: auth.error };
+  }
+
+  const { supabase, primaryTenant } = auth;
+
+  const profileResult = await fetchStaffOrganizationProfile(
+    supabase,
+    primaryTenant.organizationId,
+  );
+  if (profileResult.error || !profileResult.profile) {
+    return {
+      ...emptyModerationState,
+      error: profileResult.error ?? "Профиль не найден.",
+    };
+  }
+
+  const profile = profileResult.profile;
+  const currentStatus = parseShowcaseStatus(profile.status);
+
+  if (currentStatus === "blocked") {
+    return {
+      ...emptyModerationState,
+      error: "Профиль заблокирован. Обратитесь в поддержку.",
+    };
+  }
+
+  if (currentStatus !== "published" && currentStatus !== "hidden") {
+    return {
+      ...emptyModerationState,
+      error: "Переключатель видимости доступен только для опубликованных профилей.",
+    };
+  }
+
+  const nextStatus: OrganizationShowcaseStatus = visible ? "published" : "hidden";
+
+  const { error } = await supabase
+    .from("organization_profiles")
+    .update({
+      status: nextStatus,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("organization_id", primaryTenant.organizationId);
+
+  if (error) {
+    console.error("[setProfileVisibility]", error.message);
+    return {
+      ...emptyModerationState,
+      error: "Не удалось изменить видимость профиля.",
+    };
+  }
+
+  revalidatePath("/dashboard/learning-center");
+  if (profile.slug) {
+    revalidatePath(`/school/${profile.slug}`);
+  }
+
+  return { success: true };
+}
+
+export async function softDeleteOrganizationProfile(
+  legalNameConfirmation: string,
+): Promise<SoftDeleteProfileState> {
+  const auth = await requireShowcaseStaff();
+  if (!auth.success) {
+    return { error: auth.error };
+  }
+
+  const { supabase, primaryTenant } = auth;
+
+  const { data: profile, error: fetchError } = await supabase
+    .from("organization_profiles")
+    .select("legal_name, slug, deleted_at")
+    .eq("organization_id", primaryTenant.organizationId)
+    .maybeSingle();
+
+  if (fetchError) {
+    console.error("[softDeleteOrganizationProfile]", fetchError.message);
+    return { error: "Не удалось загрузить профиль." };
+  }
+
+  if (!profile) {
+    return { error: "Профиль не найден." };
+  }
+
+  if (profile.deleted_at) {
+    return { error: "Профиль уже удалён." };
+  }
+
+  const expectedLegalName = profile.legal_name?.trim() ?? "";
+  if (!expectedLegalName) {
+    return { error: "Сначала укажите юридическое название в профиле." };
+  }
+
+  if (legalNameConfirmation.trim() !== expectedLegalName) {
+    return { error: "Юридическое название не совпадает." };
+  }
+
+  const { error } = await supabase
+    .from("organization_profiles")
+    .update({
+      deleted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("organization_id", primaryTenant.organizationId);
+
+  if (error) {
+    console.error("[softDeleteOrganizationProfile]", error.message);
+    return { error: "Не удалось удалить профиль." };
+  }
+
+  revalidatePath("/dashboard/learning-center");
+  if (profile.slug) {
+    revalidatePath(`/school/${profile.slug}`);
+  }
+
+  return { success: true };
+}
+
+/** @deprecated Use updateMainProfile / updateContactsProfile */
+export async function updateOrganizationProfile(
+  _prev: UpdateOrganizationProfileState,
+  formData: FormData,
+): Promise<UpdateOrganizationProfileState> {
+  const mainResult = await updateMainProfile(_prev, formData);
+  if (mainResult.error) {
+    return mainResult;
+  }
+  return updateContactsProfile(_prev, formData);
 }
 
 export async function addBranch(

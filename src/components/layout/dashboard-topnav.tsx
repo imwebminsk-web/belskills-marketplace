@@ -35,7 +35,7 @@ export function DashboardTopnav({
   return (
     <header
       className={cn(
-        "flex h-16 shrink-0 items-center gap-3 border-b border-border bg-growvy-content px-4 sm:px-6",
+        "flex h-16 shrink-0 items-center gap-3 overflow-x-auto overflow-y-hidden border-b border-border bg-growvy-content px-4 sm:px-6",
         className,
       )}
     >
@@ -62,7 +62,7 @@ export function DashboardTopnav({
         <GrowvyMenuIcon className="size-5" />
       </Button>
 
-      <div className="ml-auto flex items-center gap-1 sm:gap-2">
+      <div className="ml-auto flex w-auto shrink-0 items-center gap-1 sm:gap-2">
         {role === "teacher" ? (
           <OrganizationTierBadge tier={organizationTier} />
         ) : null}

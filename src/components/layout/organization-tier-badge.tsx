@@ -31,7 +31,7 @@ export function OrganizationTierBadge({
     <Badge
       variant="outline"
       className={cn(
-        "hidden h-auto max-w-[min(100%,14rem)] shrink-0 truncate border-brand/30 bg-brand/5 px-2.5 py-1 text-xs font-medium text-brand sm:inline-flex",
+        "hidden h-auto w-auto max-w-none shrink-0 whitespace-nowrap border-brand/30 bg-brand/5 px-2.5 py-1 text-xs font-medium text-brand sm:inline-flex",
         className,
       )}
       title={label}

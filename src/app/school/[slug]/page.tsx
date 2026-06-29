@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { WithSiteHeader } from "@/components/site/with-site-header";
+import { ShowcaseGallery } from "@/components/showcase/showcase-gallery";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -86,9 +87,9 @@ function SocialIconLink({ entry }: { entry: SocialLinkEntry }) {
       <Image
         src={entry.iconPath}
         alt=""
-        width={20}
-        height={20}
-        className="size-5"
+        width={24}
+        height={24}
+        className="size-6"
         aria-hidden
       />
     </a>
@@ -116,9 +117,9 @@ function MessengerIconLink({
       <Image
         src={resolveSocialIconPath(keyName)}
         alt=""
-        width={20}
-        height={20}
-        className="size-5"
+        width={24}
+        height={24}
+        className="size-6"
         aria-hidden
       />
     </a>
@@ -134,6 +135,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     .from("organization_profiles")
     .select("public_name, short_description, logo_url, cover_url")
     .eq("slug", slug)
+    .eq("status", "published")
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (!profile) {
@@ -176,6 +179,8 @@ export default async function SchoolPage({ params }: PageProps) {
     .from("organization_profiles")
     .select("id, organization_id")
     .eq("slug", slug)
+    .eq("status", "published")
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (profileStubError) {
@@ -371,23 +376,7 @@ export default async function SchoolPage({ params }: PageProps) {
               {galleryUrls.length > 0 ? (
                 <section aria-label="Галерея" className="space-y-4">
                   <h2 className="text-xl font-semibold">Галерея</h2>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {galleryUrls.map((url, index) => (
-                      <div
-                        key={`${url}-${index}`}
-                        className="bg-muted relative aspect-[4/3] overflow-hidden rounded-lg border"
-                      >
-                        <Image
-                          src={url}
-                          alt={`Фото учебного центра ${index + 1}`}
-                          fill
-                          className="object-cover"
-                          sizes="(max-width: 640px) 50vw, 240px"
-                          unoptimized
-                        />
-                      </div>
-                    ))}
-                  </div>
+                  <ShowcaseGallery urls={galleryUrls} />
                 </section>
               ) : null}
 
@@ -450,9 +439,9 @@ export default async function SchoolPage({ params }: PageProps) {
                     <section aria-label="Контакты" className="space-y-3">
                       <h2 className="text-sm font-semibold">Контакты</h2>
                       <div className="space-y-2">
-                        {phoneList.map((phone) => (
+                        {phoneList.map((phone, phoneIndex) => (
                           <a
-                            key={phone}
+                            key={`phone-${phoneIndex}-${phone}`}
                             href={telHref(phone)}
                             className="hover:text-brand flex items-center gap-2 text-sm transition-colors"
                           >
@@ -475,20 +464,31 @@ export default async function SchoolPage({ params }: PageProps) {
                     </section>
                   )}
 
-                  {(socialEntries.length > 0 || messengerIconLinks.length > 0) && (
+                  {socialEntries.length > 0 && (
                     <>
                       <Separator />
                       <section
-                        aria-label="Соцсети и мессенджеры"
+                        aria-label="Социальные сети"
                         className="space-y-3"
                       >
                         <h2 className="text-sm font-semibold">
-                          Соцсети и мессенджеры
+                          Социальные сети
                         </h2>
                         <div className="flex flex-wrap gap-2">
                           {socialEntries.map((entry) => (
                             <SocialIconLink key={entry.key} entry={entry} />
                           ))}
+                        </div>
+                      </section>
+                    </>
+                  )}
+
+                  {messengerIconLinks.length > 0 && (
+                    <>
+                      <Separator />
+                      <section aria-label="Мессенджеры" className="space-y-3">
+                        <h2 className="text-sm font-semibold">Мессенджеры</h2>
+                        <div className="flex flex-wrap gap-2">
                           {messengerIconLinks.map((entry) => (
                             <MessengerIconLink
                               key={entry.key}

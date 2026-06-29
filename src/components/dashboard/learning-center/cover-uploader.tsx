@@ -55,9 +55,7 @@ export function CoverUploader({
 
     setBusy(true);
     try {
-      const result = await uploadCompressedImageViaApi(file, {
-        fileLabel: file.name,
-      });
+      const result = await uploadCompressedImageViaApi(file);
 
       if ("error" in result) {
         setError(result.error);

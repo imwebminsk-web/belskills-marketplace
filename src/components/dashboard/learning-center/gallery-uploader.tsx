@@ -52,9 +52,7 @@ export function GalleryUploader({
         }
 
         try {
-          const result = await uploadCompressedImageViaApi(raw, {
-            fileLabel: raw.name,
-          });
+          const result = await uploadCompressedImageViaApi(raw);
           if ("error" in result) {
             toast.error(result.error);
             continue;
