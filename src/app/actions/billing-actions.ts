@@ -12,6 +12,7 @@ import {
   PENDING_INVOICE_MESSAGE,
   userHasPendingInvoice,
 } from "@/lib/billing/checkout-rules";
+import { syncLegalFieldsToOrganizationProfile } from "@/lib/billing/organization-legal-sync";
 import { getPrimaryActiveStaffTenant } from "@/lib/auth/tenant";
 import {
   calculateTierTotalKopecks,
@@ -222,7 +223,15 @@ export async function submitBillingRequest(
     };
   }
 
+  if (isBank) {
+    await syncLegalFieldsToOrganizationProfile(supabase, data.organizationId, {
+      unp: data.unp!.trim(),
+      legalName: data.companyName!.trim(),
+    });
+  }
+
   revalidatePath("/dashboard/invoices");
+  revalidatePath("/dashboard/learning-center");
 
   return { success: true, requestId: row.id };
 }

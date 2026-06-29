@@ -28,7 +28,7 @@ type SettingsPageContentProps = {
   avatarUrl: string | null;
   displayName: string;
   feedbackKey: "saved" | "empty_name" | "update_failed" | null;
-  staffSchoolName: string | null;
+  staffSchoolBrandName: string | null;
 };
 
 function roleLabel(role: ProfileRole, t: (key: TranslationKey) => string): string {
@@ -52,7 +52,7 @@ export function SettingsPageContent({
   avatarUrl,
   displayName,
   feedbackKey,
-  staffSchoolName,
+  staffSchoolBrandName,
 }: SettingsPageContentProps) {
   const { t } = useLanguage();
 
@@ -138,9 +138,9 @@ export function SettingsPageContent({
         </Card>
       </div>
 
-      {role === "student" || staffSchoolName ? (
+      {role === "student" || staffSchoolBrandName ? (
         <div className="px-4 lg:px-6">
-          <BecomeCreatorSection schoolName={staffSchoolName} />
+          <BecomeCreatorSection schoolBrandName={staffSchoolBrandName} />
         </div>
       ) : null}
     </div>

@@ -70,11 +70,6 @@ export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
         icon: StoreIcon,
       },
       {
-        title: "Курсы",
-        url: "/dashboard/learning-center/courses",
-        icon: LibraryIcon,
-      },
-      {
         title: "Тарифы",
         url: "/dashboard/tariffs",
         icon: CreditCardIcon,

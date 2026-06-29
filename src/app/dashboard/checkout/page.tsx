@@ -9,6 +9,7 @@ import {
   organizationHasPendingInvoice,
   userHasPendingInvoice,
 } from "@/lib/billing/checkout-rules";
+import { fetchOrganizationBrandName } from "@/lib/organization/brand-name";
 import { getPrimaryActiveStaffTenant, getUserTenantsSafe } from "@/lib/auth/tenant";
 import {
   calculateTierTotalKopecks,
@@ -106,9 +107,14 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
   const periodLabel =
     period === 1 ? "1 месяц" : `${period} месяца`;
 
-  const [userPending, orgPending] = await Promise.all([
+  const [userPending, orgPending, organizationBrandName] = await Promise.all([
     userHasPendingInvoice(supabase, user.id),
     organizationHasPendingInvoice(supabase, primaryTenant.organizationId),
+    fetchOrganizationBrandName(
+      supabase,
+      primaryTenant.organizationId,
+      primaryTenant.organizationName,
+    ),
   ]);
 
   return (
@@ -127,7 +133,7 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
 
       <CheckoutClient
         organizationId={primaryTenant.organizationId}
-        organizationName={primaryTenant.organizationName}
+        organizationBrandName={organizationBrandName}
         tierId={tier.id}
         tierName={tier.name}
         period={period}

@@ -26,7 +26,7 @@ import { PENDING_INVOICE_MESSAGE } from "@/lib/billing/checkout-rules";
 
 type CheckoutClientProps = {
   organizationId: string;
-  organizationName: string;
+  organizationBrandName: string;
   tierId: string;
   tierName: string;
   period: BillingPeriod;
@@ -39,7 +39,7 @@ type CheckoutClientProps = {
 
 export function CheckoutClient({
   organizationId,
-  organizationName,
+  organizationBrandName,
   tierId,
   tierName,
   period,
@@ -174,9 +174,9 @@ export function CheckoutClient({
 
           <dl className="text-muted-foreground space-y-2 text-sm">
             <div className="flex justify-between gap-4">
-              <dt>Организация</dt>
+              <dt>Неофициальное название (Бренд)</dt>
               <dd className="text-foreground text-right font-medium">
-                {organizationName}
+                {organizationBrandName}
               </dd>
             </div>
             <div className="flex justify-between gap-4">

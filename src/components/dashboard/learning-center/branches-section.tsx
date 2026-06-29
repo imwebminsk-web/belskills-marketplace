@@ -100,6 +100,11 @@ export function BranchesSection({ branches }: BranchesSectionProps) {
                       <p className="text-sm">
                         {branch.city}, {branch.address}
                       </p>
+                      {branch.phone ? (
+                        <p className="text-muted-foreground text-sm">
+                          {branch.phone}
+                        </p>
+                      ) : null}
                     </div>
                     <Button
                       type="button"
@@ -152,6 +157,15 @@ export function BranchesSection({ branches }: BranchesSectionProps) {
                 name="address"
                 required
                 placeholder="ул. Примерная, 1"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="branch-phone">Телефон (необязательно)</Label>
+              <Input
+                id="branch-phone"
+                name="phone"
+                type="tel"
+                placeholder="+375 29 000-00-00"
               />
             </div>
 

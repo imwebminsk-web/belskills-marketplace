@@ -43,7 +43,7 @@ const ACCEPTED_IMAGE_TYPES = {
 type LogoUploaderProps = {
   organizationId: string;
   initialLogoUrl: string | null;
-  organizationName: string;
+  brandDisplayName: string;
 };
 
 function initialsFromName(name: string): string {
@@ -56,7 +56,7 @@ function initialsFromName(name: string): string {
 export function LogoUploader({
   organizationId,
   initialLogoUrl,
-  organizationName,
+  brandDisplayName,
 }: LogoUploaderProps) {
   const router = useRouter();
   const [logoUrl, setLogoUrl] = useState(initialLogoUrl);
@@ -210,13 +210,13 @@ export function LogoUploader({
               // eslint-disable-next-line @next/next/no-img-element -- storage preview URL
               <img
                 src={logoUrl}
-                alt={`Логотип ${organizationName}`}
+                alt={`Логотип ${brandDisplayName}`}
                 className="size-full object-cover"
               />
             ) : (
               <div className="text-muted-foreground flex flex-col items-center gap-1 p-2 text-center text-xs">
                 <Building2Icon className="size-8 opacity-50" />
-                <span>{initialsFromName(organizationName)}</span>
+                <span>{initialsFromName(brandDisplayName)}</span>
               </div>
             )}
           </div>

@@ -21,16 +21,18 @@ import { Label } from "@/components/ui/label";
 const empty: CreateTrialOrganizationState = {};
 
 type BecomeCreatorSectionProps = {
-  schoolName: string | null;
+  schoolBrandName: string | null;
 };
 
-export function BecomeCreatorSection({ schoolName }: BecomeCreatorSectionProps) {
+export function BecomeCreatorSection({
+  schoolBrandName,
+}: BecomeCreatorSectionProps) {
   const [state, formAction, pending] = useActionState(
     createTrialOrganization,
     empty,
   );
 
-  if (schoolName) {
+  if (schoolBrandName) {
     return (
       <Card className="max-w-lg border-primary/30 bg-primary/5">
         <CardHeader>
@@ -40,7 +42,10 @@ export function BecomeCreatorSection({ schoolName }: BecomeCreatorSectionProps) 
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm font-medium">{schoolName}</p>
+          <div className="space-y-2">
+            <Label>Неофициальное название (Бренд)</Label>
+            <p className="text-sm font-medium">{schoolBrandName}</p>
+          </div>
           <Button asChild>
             <Link href="/dashboard/courses">Перейти к курсам</Link>
           </Button>

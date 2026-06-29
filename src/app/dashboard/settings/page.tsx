@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { SettingsPageContent } from "@/components/dashboard/settings/settings-page-content";
 import { SiteHeader } from "@/components/site-header";
+import { fetchOrganizationBrandName } from "@/lib/organization/brand-name";
 import {
   getPrimaryActiveStaffTenant,
   getUserTenantsSafe,
@@ -44,9 +45,17 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   }
 
   const shellRole = resolveDashboardShellRole(profile.is_global_admin, tenants);
-  const staffSchoolName = hasCreatorOrgAccess(tenants)
-    ? (getPrimaryActiveStaffTenant(tenants)?.organizationName ?? tenants[0]?.organizationName ?? null)
+  const primaryStaffTenant = hasCreatorOrgAccess(tenants)
+    ? (getPrimaryActiveStaffTenant(tenants) ?? tenants[0] ?? null)
     : null;
+  const staffSchoolBrandName =
+    primaryStaffTenant != null
+      ? await fetchOrganizationBrandName(
+          supabase,
+          primaryStaffTenant.organizationId,
+          primaryStaffTenant.organizationName,
+        )
+      : null;
 
   const displayName =
     profile.full_name?.trim() ||
@@ -76,7 +85,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
             avatarUrl={profile.avatar_url}
             displayName={displayName}
             feedbackKey={feedbackKey}
-            staffSchoolName={staffSchoolName}
+            staffSchoolBrandName={staffSchoolBrandName}
           />
         </div>
       </div>

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { InvoicesClient } from "@/components/dashboard/invoices/invoices-client";
+import { fetchOrganizationBrandName } from "@/lib/organization/brand-name";
 import {
   getPrimaryActiveStaffTenant,
   getUserTenantsSafe,
@@ -86,13 +87,19 @@ export default async function InvoicesPage() {
     };
   });
 
+  const organizationBrandName = await fetchOrganizationBrandName(
+    supabase,
+    primaryTenant.organizationId,
+    primaryTenant.organizationName,
+  );
+
   return (
     <div className="mx-auto w-full max-w-5xl">
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">Счета и акты</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          История выставленных счетов и актов для организации «
-          {primaryTenant.organizationName}».
+          История выставленных счетов и актов для «
+          {organizationBrandName}».
         </p>
       </div>
       <InvoicesClient invoices={invoices} />

@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { z } from "zod";
 
 import { loadAuthContext } from "@/lib/auth/access";
 import {
@@ -11,10 +10,18 @@ import {
 } from "@/lib/auth/tenant";
 import {
   extractLogoStoragePath,
-  sanitizeOrganizationSlug,
-  validateOrganizationSlug,
 } from "@/lib/organization/showcase-profile";
-import { normalizeRichTextHtml } from "@/lib/utils/rich-text-content";
+import {
+  addBranchSchema,
+  branchIdSchema,
+  organizationLogoPathSchema,
+  organizationSlugSchema,
+  updateOrganizationProfileSchema,
+} from "@/lib/organization/showcase-profile-schemas";
+import {
+  getOrganizationProfileWithBillingLegal,
+  syncLegalFieldsToBillingRequests,
+} from "@/lib/billing/organization-legal-sync";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database.types";
 
@@ -36,18 +43,7 @@ export type AddBranchState = {
 
 const emptyState: UpdateOrganizationProfileState = {};
 const emptyBranchState: AddBranchState = {};
-
-const branchIdSchema = z.string().uuid("Некорректный ID филиала");
-
-const addBranchSchema = z.object({
-  city: z.string().trim().min(1, "Укажите город"),
-  address: z.string().trim().min(1, "Укажите адрес"),
-  label: z
-    .string()
-    .trim()
-    .optional()
-    .transform((value) => (value && value.length > 0 ? value : null)),
-});
+const LOGOS_BUCKET = "logos";
 
 async function requireShowcaseStaff() {
   const supabase = await createClient();
@@ -81,48 +77,35 @@ async function requireShowcaseStaff() {
   return { success: true as const, supabase, primaryTenant };
 }
 
-const optionalFormText = z
-  .union([z.string(), z.null()])
-  .optional()
-  .transform((value) => {
-    if (value == null || value === undefined) {
-      return null;
-    }
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  });
+export async function getOrganizationProfile(
+  organizationId: string,
+): Promise<OrganizationProfileRow | null> {
+  const auth = await requireShowcaseStaff();
+  if (!auth.success) {
+    return null;
+  }
 
-const optionalRichText = z
-  .union([z.string(), z.null()])
-  .optional()
-  .transform((value) => {
-    const normalized = normalizeRichTextHtml(String(value ?? "").trim());
-    return normalized.length > 0 ? normalized : null;
-  });
+  if (auth.primaryTenant.organizationId !== organizationId) {
+    return null;
+  }
 
-const updateOrganizationProfileSchema = z.object({
-  public_name: z.string().trim().min(1, "Укажите публичное название"),
-  short_description: z
-    .union([z.string(), z.null()])
-    .optional()
-    .transform((value) => {
-      if (value == null || value === undefined) {
-        return null;
-      }
-      const trimmed = value.trim();
-      return trimmed.length > 0 ? trimmed : null;
-    })
-    .refine(
-      (value) => value === null || value.length <= 150,
-      "Краткое описание — не более 150 символов",
-    ),
-  long_description: optionalRichText,
-  website: optionalFormText,
-  phone_main: optionalFormText,
-  messenger_viber: optionalFormText,
-  messenger_telegram: optionalFormText,
-  messenger_whatsapp: optionalFormText,
-});
+  const { data: profile, error } = await auth.supabase
+    .from("organization_profiles")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[getOrganizationProfile]", error.message);
+    return null;
+  }
+
+  return getOrganizationProfileWithBillingLegal(
+    auth.supabase,
+    profile,
+    organizationId,
+  );
+}
 
 export async function updateOrganizationProfile(
   _prev: UpdateOrganizationProfileState,
@@ -139,6 +122,18 @@ export async function updateOrganizationProfile(
     public_name: formData.get("public_name"),
     short_description: formData.get("short_description"),
     long_description: formData.get("long_description"),
+    cover_url: formData.get("cover_url"),
+    gallery: formData.get("gallery"),
+    unp: formData.get("unp"),
+    legal_name: formData.get("legal_name"),
+    phones: formData.getAll("phones"),
+    social_links: {
+      instagram: formData.get("social_instagram"),
+      telegram: formData.get("social_telegram"),
+      viber: formData.get("social_viber"),
+      facebook: formData.get("social_facebook"),
+      vk: formData.get("social_vk"),
+    },
     website: formData.get("website"),
     phone_main: formData.get("phone_main"),
     messenger_viber: formData.get("messenger_viber"),
@@ -167,6 +162,12 @@ export async function updateOrganizationProfile(
       public_name: data.public_name,
       short_description: data.short_description,
       long_description: data.long_description,
+      cover_url: data.cover_url,
+      gallery: data.gallery,
+      unp: data.unp,
+      legal_name: data.legal_name,
+      phones: data.phones,
+      social_links: data.social_links,
       website: data.website,
       phone_main: data.phone_main,
       messengers,
@@ -179,7 +180,14 @@ export async function updateOrganizationProfile(
     return { ...emptyState, error: "Не удалось сохранить профиль. Попробуйте позже." };
   }
 
+  await syncLegalFieldsToBillingRequests(supabase, primaryTenant.organizationId, {
+    unp: data.unp,
+    legalName: data.legal_name,
+  });
+
   revalidatePath("/dashboard/learning-center");
+  revalidatePath("/dashboard/checkout");
+  revalidatePath("/dashboard/invoices");
 
   return { success: true };
 }
@@ -199,6 +207,7 @@ export async function addBranch(
     city: formData.get("city"),
     address: formData.get("address"),
     label: formData.get("label") ?? "",
+    phone: formData.get("phone"),
   });
 
   if (!parsed.success) {
@@ -213,6 +222,7 @@ export async function addBranch(
     city: parsed.data.city,
     address: parsed.data.address,
     label: parsed.data.label,
+    phone: parsed.data.phone,
   });
 
   if (error) {
@@ -278,15 +288,6 @@ export async function deleteBranch(
   return { success: true };
 }
 
-const LOGOS_BUCKET = "logos";
-
-const organizationLogoPathSchema = z
-  .string()
-  .regex(
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/\d+\.webp$/,
-    "Некорректный путь к файлу логотипа",
-  );
-
 export async function saveOrganizationLogo(
   storagePath: string,
 ): Promise<
@@ -336,17 +337,6 @@ export async function saveOrganizationLogo(
 
   return { success: true, logoUrl };
 }
-
-const organizationSlugSchema = z
-  .string()
-  .trim()
-  .transform(sanitizeOrganizationSlug)
-  .superRefine((slug, ctx) => {
-    const message = validateOrganizationSlug(slug);
-    if (message) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message });
-    }
-  });
 
 export type OrganizationSlugAvailability = {
   available: boolean;

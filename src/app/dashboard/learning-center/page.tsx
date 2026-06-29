@@ -5,12 +5,14 @@ import { ExternalLinkIcon } from "lucide-react";
 
 import { ProfileForm } from "@/components/dashboard/learning-center/profile-form";
 import { SiteHeader } from "@/components/site-header";
+import { getOrganizationProfileWithBillingLegal } from "@/lib/billing/organization-legal-sync";
 import { Button } from "@/components/ui/button";
 import {
   getPrimaryActiveStaffTenant,
   getUserTenantsSafe,
   hasCreatorOrgAccess,
 } from "@/lib/auth/tenant";
+import { resolveOrganizationBrandName } from "@/lib/organization/showcase-profile";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
@@ -51,7 +53,7 @@ export default async function LearningCenterPage() {
     redirect("/dashboard/settings");
   }
 
-  const [{ data: organizationProfile, error: showcaseError }, { data: branches, error: branchesError }] =
+  const [{ data: organizationProfileRaw, error: showcaseError }, { data: branches, error: branchesError }] =
     await Promise.all([
       supabase
         .from("organization_profiles")
@@ -64,6 +66,14 @@ export default async function LearningCenterPage() {
         .eq("organization_id", primaryTenant.organizationId)
         .order("created_at", { ascending: true }),
     ]);
+
+  const organizationProfile = organizationProfileRaw
+    ? await getOrganizationProfileWithBillingLegal(
+        supabase,
+        organizationProfileRaw,
+        primaryTenant.organizationId,
+      )
+    : null;
 
   if (showcaseError) {
     console.error("[LearningCenterPage] profile", showcaseError.message);
@@ -80,6 +90,11 @@ export default async function LearningCenterPage() {
     user.email?.split("@")[0] ||
     "Пользователь";
 
+  const brandName = resolveOrganizationBrandName(
+    organizationProfile?.public_name,
+    primaryTenant.organizationName,
+  );
+
   return (
     <>
       <SiteHeader fullName={displayName} />
@@ -89,7 +104,7 @@ export default async function LearningCenterPage() {
             <div>
               <h1 className="text-2xl font-bold tracking-tight">Учебный центр</h1>
               <p className="text-muted-foreground mt-1 text-sm">
-                Настройте публичную витрину школы «{primaryTenant.organizationName}
+                Настройте публичную витрину школы «{brandName}
                 » для каталога BelSkills.
               </p>
             </div>
@@ -112,7 +127,6 @@ export default async function LearningCenterPage() {
               profile={organizationProfile}
               branches={branches ?? []}
               organizationId={primaryTenant.organizationId}
-              organizationName={primaryTenant.organizationName}
             />
           ) : (
             <div className="text-muted-foreground rounded-lg border border-dashed p-8 text-center text-sm">
