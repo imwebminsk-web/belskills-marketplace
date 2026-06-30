@@ -24,19 +24,13 @@ import {
 import { LessonNavigation } from "@/components/learn/lesson-navigation";
 import { TestRevealWrapper } from "@/components/learn/test-reveal-wrapper";
 import { useLanguage } from "@/components/providers/language-provider";
-import { youtubeEmbedSrc } from "@/lib/learn/youtube-embed";
 import { cn } from "@/lib/utils";
-import type { Database, Json } from "@/types/database.types";
 import { ArrowLeft, CheckCircle2, Circle, PlayCircle } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
-
-type LessonType = Database["public"]["Enums"]["lesson_type"];
 
 export type PlayerLessonPayload = {
   id: string;
   title: string;
-  type: LessonType;
-  content: Json;
   test_id: string | null;
 };
 
@@ -57,22 +51,6 @@ type PlayerLayoutProps = {
   /** Уроки, отмеченные учеником как пройденные (для «Завершить курс»). */
   completedLessonIds?: string[];
 };
-
-function readVideoUrl(content: Json): string {
-  if (!content || typeof content !== "object" || Array.isArray(content)) {
-    return "";
-  }
-  const c = content as Record<string, unknown>;
-  return typeof c.videoUrl === "string" ? c.videoUrl : "";
-}
-
-function readBody(content: Json): string {
-  if (!content || typeof content !== "object" || Array.isArray(content)) {
-    return "";
-  }
-  const c = content as Record<string, unknown>;
-  return typeof c.body === "string" ? c.body : "";
-}
 
 type LessonNavStatus = "active" | "completed" | "pending";
 
@@ -103,69 +81,6 @@ function LessonStatusIcon({ status }: { status: LessonNavStatus }) {
       return (
         <Circle className="text-muted-foreground size-4 shrink-0" aria-hidden />
       );
-  }
-}
-
-function LessonMainContent({
-  lesson,
-  t,
-}: {
-  lesson: PlayerLessonPayload;
-  t: ReturnType<typeof useLanguage>["t"];
-}) {
-  switch (lesson.type) {
-    case "video": {
-      const url = readVideoUrl(lesson.content).trim();
-      const embed = youtubeEmbedSrc(url);
-      if (embed) {
-        return (
-          <div className="bg-muted aspect-video w-full overflow-hidden rounded-xl border shadow-sm">
-            <iframe
-              title={lesson.title}
-              src={embed}
-              className="size-full"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-            />
-          </div>
-        );
-      }
-      if (url) {
-        return (
-          <div className="bg-muted aspect-video w-full overflow-hidden rounded-xl border shadow-sm">
-            <video controls className="size-full" src={url} />
-          </div>
-        );
-      }
-      return (
-        <p className="text-muted-foreground text-sm">
-          {t("lesson_view.videoNotConfigured")}
-        </p>
-      );
-    }
-    case "text": {
-      const html = readBody(lesson.content).trim();
-      if (!html) {
-        return (
-          <p className="text-muted-foreground text-sm">
-            {t("lesson_view.emptyTextLesson")}
-          </p>
-        );
-      }
-      return (
-        <div
-          className="prose dark:prose-invert max-w-none"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      );
-    }
-    case "quiz":
-    case "test":
-      return null;
-    default: {
-      const _exhaustive: never = lesson.type;
-      return _exhaustive;
-    }
   }
 }
 
@@ -342,7 +257,9 @@ export function PlayerLayout({
               ))}
             </div>
           ) : (
-            <LessonMainContent lesson={lesson} t={t} />
+            <p className="text-muted-foreground text-sm">
+              {t("lesson_view.emptyTextLesson")}
+            </p>
           )}
           {lesson.test_id && !blockTestIds.includes(lesson.test_id) ? (
             <div className="space-y-4 pt-2">

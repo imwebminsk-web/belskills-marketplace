@@ -57,8 +57,6 @@ import type { Database, Json } from "@/types/database.types";
 
 const initialMeta: LessonBlockActionState = {};
 
-type LessonType = Database["public"]["Enums"]["lesson_type"];
-
 export type LessonEditorBlockRow = {
   id: string;
   type: LessonBlockType;
@@ -69,7 +67,6 @@ export type LessonEditorBlockRow = {
 export type LessonBlockEditorLesson = {
   id: string;
   title: string;
-  type: LessonType;
   is_published: boolean;
 };
 

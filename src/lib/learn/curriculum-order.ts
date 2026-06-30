@@ -1,9 +1,6 @@
-import type { Database } from "@/types/database.types";
-
 export type LearnLessonNav = {
   id: string;
   title: string;
-  type: Database["public"]["Enums"]["lesson_type"];
   order_index: number;
   is_published: boolean;
   test_id: string | null;

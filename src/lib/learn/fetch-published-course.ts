@@ -31,7 +31,6 @@ export const fetchPublishedCourseForLearn = cache(
           lessons (
             id,
             title,
-            type,
             order_index,
             is_published,
             test_id

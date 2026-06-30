@@ -97,9 +97,9 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
         lessons (
           id,
           title,
-          type,
           is_published,
-          order_index
+          order_index,
+          test_id
         )
       )
     `,

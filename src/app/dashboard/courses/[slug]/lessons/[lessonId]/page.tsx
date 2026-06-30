@@ -67,7 +67,7 @@ export default async function LessonEditorPage({ params }: PageProps) {
   const { data: lesson, error: lessonError } = await supabase
     .from("lessons")
     .select(
-      "id, title, type, content, is_published, test_id, module_id, order_index",
+      "id, title, is_published, test_id, module_id, order_index",
     )
     .eq("id", lessonId)
     .maybeSingle();
@@ -148,7 +148,6 @@ export default async function LessonEditorPage({ params }: PageProps) {
           lesson={{
             id: lesson.id,
             title: lesson.title,
-            type: lesson.type,
             is_published: lesson.is_published,
           }}
           blocks={blocks}

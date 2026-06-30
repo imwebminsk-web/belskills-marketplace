@@ -8,10 +8,8 @@ import {
   ChevronUpIcon,
   FileQuestionIcon,
   FileTextIcon,
-  HelpCircleIcon,
   PencilIcon,
   Trash2Icon,
-  VideoIcon,
 } from "lucide-react";
 
 import {
@@ -40,7 +38,7 @@ import type { Database } from "@/types/database.types";
 
 export type CurriculumLessonRow = Pick<
   Database["public"]["Tables"]["lessons"]["Row"],
-  "id" | "title" | "type" | "is_published" | "order_index"
+  "id" | "title" | "is_published" | "order_index" | "test_id"
 >;
 
 export type CurriculumModuleRow = Pick<
@@ -48,24 +46,20 @@ export type CurriculumModuleRow = Pick<
   "id" | "title" | "order_index"
 > & { lessons: CurriculumLessonRow[] };
 
-type LessonType = Database["public"]["Enums"]["lesson_type"];
-
 const initialCurriculumState: CurriculumActionState = {};
 
-function LessonTypeIcon({ type, className }: { type: LessonType; className?: string }) {
+function LessonKindIcon({
+  testId,
+  className,
+}: {
+  testId: string | null;
+  className?: string;
+}) {
   const iconClass = cn("size-4 shrink-0 text-muted-foreground", className);
-  switch (type) {
-    case "video":
-      return <VideoIcon className={iconClass} aria-hidden />;
-    case "text":
-      return <FileTextIcon className={iconClass} aria-hidden />;
-    case "quiz":
-      return <HelpCircleIcon className={iconClass} aria-hidden />;
-    case "test":
-      return <FileQuestionIcon className={iconClass} aria-hidden />;
-    default:
-      return <FileTextIcon className={iconClass} aria-hidden />;
+  if (testId) {
+    return <FileQuestionIcon className={iconClass} aria-hidden />;
   }
+  return <FileTextIcon className={iconClass} aria-hidden />;
 }
 
 function AddModuleForm({ courseId }: { courseId: string }) {
@@ -353,7 +347,7 @@ export function CurriculumTab({
                         key={lesson.id}
                         className="flex flex-wrap items-center gap-2 rounded-md border bg-card/50 px-3 py-2"
                       >
-                        <LessonTypeIcon type={lesson.type} />
+                        <LessonKindIcon testId={lesson.test_id} />
                         <Link
                           href={`${lessonBasePath}/${lesson.id}`}
                           className="min-w-0 flex-1 truncate text-sm font-medium hover:underline"

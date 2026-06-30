@@ -64,9 +64,9 @@ type CourseRow = Pick<
           | {
               id: string;
               title: string;
-              type: Database["public"]["Enums"]["lesson_type"];
               order_index: number;
               is_published: boolean;
+              test_id: string | null;
             }[]
           | null;
       }[]
@@ -187,7 +187,7 @@ function buildCurriculumPreview(
         .map((l) => ({
           id: l.id,
           title: l.title,
-          type: l.type,
+          test_id: l.test_id,
         })),
     }));
 }
@@ -271,9 +271,9 @@ const getPublishedCourseBySlug = cache(
           lessons (
             id,
             title,
-            type,
             order_index,
-            is_published
+            is_published,
+            test_id
           )
         )
       `,

@@ -9,14 +9,13 @@ import {
 } from "@/lib/auth/access";
 import { createClient } from "@/lib/supabase/server";
 import { createLessonSchema } from "@/lib/validations/curriculum-schema";
-import type { Database, Json } from "@/types/database.types";
+import type { Database } from "@/types/database.types";
 
 export type CurriculumActionState = {
   success?: boolean;
   error?: string;
 };
 
-type LessonType = Database["public"]["Enums"]["lesson_type"];
 
 type DbClient = SupabaseClient<Database>;
 
@@ -80,14 +79,6 @@ function storageObjectPathFromPublicUrl(
   }
 }
 
-function readVideoUrlFromLessonContent(content: unknown): string {
-  if (!content || typeof content !== "object" || Array.isArray(content)) {
-    return "";
-  }
-  const c = content as Record<string, unknown>;
-  return typeof c.videoUrl === "string" ? c.videoUrl.trim() : "";
-}
-
 async function removeStorageObjectIfInBucket(
   supabase: DbClient,
   bucketId: string,
@@ -105,17 +96,6 @@ async function removeStorageObjectIfInBucket(
       error.message,
     );
   }
-}
-
-async function removeSelfHostedLessonVideoFromStorage(
-  supabase: DbClient,
-  lessonType: LessonType,
-  content: Json,
-): Promise<void> {
-  if (lessonType !== "video") return;
-  const url = readVideoUrlFromLessonContent(content);
-  if (!url) return;
-  await removeStorageObjectIfInBucket(supabase, BUCKET_VIDEOS, url);
 }
 
 async function removeImageBlocksForLessons(
@@ -270,9 +250,7 @@ export async function createLesson(
     .insert({
       module_id: moduleId,
       title,
-      type: "text",
       order_index: orderIndex,
-      content: {},
     })
     .select("id")
     .single();
@@ -298,110 +276,6 @@ export async function createLesson(
   }
 
   revalidatePath(`/dashboard/courses/${course.slug}`);
-  revalidatePath("/dashboard/courses");
-  return { success: true };
-}
-
-const lessonTypesForEditor: LessonType[] = ["text", "video", "quiz", "test"];
-
-export async function updateLesson(
-  _prev: CurriculumActionState,
-  formData: FormData,
-): Promise<CurriculumActionState> {
-  const lessonId = String(formData.get("lesson_id") ?? "").trim();
-  const title = String(formData.get("title") ?? "").trim();
-  const typeRaw = String(formData.get("type") ?? "").trim() as LessonType;
-  const isPublishedRaw = String(formData.get("is_published") ?? "").trim();
-
-  if (!lessonId) {
-    return { error: "Не указан урок." };
-  }
-  if (!title) {
-    return { error: "Введите название урока." };
-  }
-  if (!lessonTypesForEditor.includes(typeRaw)) {
-    return { error: "Некорректный тип урока." };
-  }
-
-  const is_published = isPublishedRaw === "true";
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "Нужна авторизация." };
-  }
-
-  const { data: lessonRow, error: lessonErr } = await supabase
-    .from("lessons")
-    .select("id, module_id")
-    .eq("id", lessonId)
-    .maybeSingle();
-
-  if (lessonErr || !lessonRow) {
-    return { error: "Урок не найден." };
-  }
-
-  const { data: module, error: moduleErr } = await supabase
-    .from("modules")
-    .select("id, course_id")
-    .eq("id", lessonRow.module_id)
-    .maybeSingle();
-
-  if (moduleErr || !module) {
-    return { error: "Модуль не найден." };
-  }
-
-  const access = await loadCourseWithManageAccess(
-    supabase,
-    user.id,
-    module.course_id,
-  );
-  if (!access.ok) {
-    return { error: "Нет прав на изменение этого урока." };
-  }
-  const course = access.course;
-
-  let content: Json = {};
-  let test_id: string | null = null;
-
-  if (typeRaw === "video") {
-    const videoUrl = String(formData.get("video_url") ?? "").trim();
-    content = { videoUrl };
-  } else if (typeRaw === "text") {
-    const body = String(formData.get("body") ?? "");
-    content = { body };
-  } else if (typeRaw === "quiz" || typeRaw === "test") {
-    test_id = String(formData.get("test_id") ?? "").trim() || null;
-    if (!test_id) {
-      return {
-        error: "Выберите тест для урока с типом «тест / квиз».",
-      };
-    }
-    content = {};
-  }
-
-  const { error: updateError } = await supabase
-    .from("lessons")
-    .update({
-      title,
-      type: typeRaw,
-      content,
-      is_published,
-      test_id: typeRaw === "text" || typeRaw === "video" ? null : test_id,
-    })
-    .eq("id", lessonId);
-
-  if (updateError) {
-    console.error("[updateLesson]", updateError.message);
-    return { error: updateError.message || "Не удалось сохранить урок." };
-  }
-
-  const slug = course.slug;
-  revalidatePath(`/dashboard/courses/${slug}/lessons/${lessonId}`);
-  revalidatePath(`/dashboard/courses/${slug}`);
   revalidatePath("/dashboard/courses");
   return { success: true };
 }
@@ -618,7 +492,7 @@ export async function deleteModule(
 
   const { data: moduleLessons, error: lessonsListErr } = await supabase
     .from("lessons")
-    .select("id, type, content")
+    .select("id")
     .eq("module_id", id);
 
   if (lessonsListErr) {
@@ -630,14 +504,6 @@ export async function deleteModule(
 
   const lessonIdsForModule = (moduleLessons ?? []).map((l) => l.id);
   await removeImageBlocksForLessons(supabase, lessonIdsForModule);
-
-  for (const row of moduleLessons ?? []) {
-    await removeSelfHostedLessonVideoFromStorage(
-      supabase,
-      row.type as LessonType,
-      row.content as Json,
-    );
-  }
 
   const { error: delErr } = await supabase.from("modules").delete().eq("id", id);
 
@@ -670,7 +536,7 @@ export async function deleteLesson(
 
   const { data: lesson, error: lessonErr } = await supabase
     .from("lessons")
-    .select("id, module_id, type, content")
+    .select("id, module_id")
     .eq("id", id)
     .maybeSingle();
 
@@ -699,12 +565,6 @@ export async function deleteLesson(
   const course = access.course;
 
   await removeImageBlocksForLessons(supabase, [id]);
-
-  await removeSelfHostedLessonVideoFromStorage(
-    supabase,
-    lesson.type as LessonType,
-    lesson.content as Json,
-  );
 
   const { error: delErr } = await supabase.from("lessons").delete().eq("id", id);
 
@@ -775,24 +635,6 @@ export async function deleteCourse(
 
     const allLessonIds = (lessonIdRows ?? []).map((l) => l.id);
     await removeImageBlocksForLessons(supabase, allLessonIds);
-
-    const { data: lesRows, error: lesErr } = await supabase
-      .from("lessons")
-      .select("type, content")
-      .in("module_id", moduleIds);
-
-    if (lesErr) {
-      console.error("[deleteCourse] list lessons", lesErr.message);
-      return { error: lesErr.message || "Не удалось подготовить удаление." };
-    }
-
-    for (const row of lesRows ?? []) {
-      await removeSelfHostedLessonVideoFromStorage(
-        supabase,
-        row.type as LessonType,
-        row.content as Json,
-      );
-    }
   }
 
   await removeStorageObjectIfInBucket(supabase, BUCKET_COVERS, course.image_url);

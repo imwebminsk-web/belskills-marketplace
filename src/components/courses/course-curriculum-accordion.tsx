@@ -7,13 +7,12 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { cn } from "@/lib/utils";
-import type { Database } from "@/types/database.types";
-import { FileText, ListChecks, Video } from "lucide-react";
+import { FileText, ListChecks } from "lucide-react";
 
 export type CurriculumLessonPreview = {
   id: string;
   title: string;
-  type: Database["public"]["Enums"]["lesson_type"];
+  test_id: string | null;
 };
 
 export type CurriculumModulePreview = {
@@ -22,44 +21,18 @@ export type CurriculumModulePreview = {
   lessons: CurriculumLessonPreview[];
 };
 
-function LessonTypeIcon({
-  type,
+function LessonKindIcon({
+  testId,
   className,
 }: {
-  type: CurriculumLessonPreview["type"];
+  testId: string | null;
   className?: string;
 }) {
   const iconClass = cn("size-4 shrink-0 text-muted-foreground", className);
-  switch (type) {
-    case "video":
-      return <Video className={iconClass} aria-hidden />;
-    case "text":
-      return <FileText className={iconClass} aria-hidden />;
-    case "quiz":
-    case "test":
-      return <ListChecks className={iconClass} aria-hidden />;
-    default: {
-      const _exhaustive: never = type;
-      return _exhaustive;
-    }
+  if (testId) {
+    return <ListChecks className={iconClass} aria-hidden />;
   }
-}
-
-function lessonTypeLabel(type: CurriculumLessonPreview["type"]): string {
-  switch (type) {
-    case "video":
-      return "Видео";
-    case "text":
-      return "Текст";
-    case "quiz":
-      return "Квиз";
-    case "test":
-      return "Тест";
-    default: {
-      const _exhaustive: never = type;
-      return _exhaustive;
-    }
-  }
+  return <FileText className={iconClass} aria-hidden />;
 }
 
 export function CourseCurriculumAccordion({
@@ -103,11 +76,11 @@ export function CourseCurriculumAccordion({
                     key={lesson.id}
                     className="flex items-start gap-2 rounded-md border border-transparent px-1 py-1.5 text-sm"
                   >
-                    <LessonTypeIcon type={lesson.type} />
+                    <LessonKindIcon testId={lesson.test_id} />
                     <span className="min-w-0 flex-1 leading-snug">
-                      <span className="sr-only">
-                        {lessonTypeLabel(lesson.type)}:{" "}
-                      </span>
+                      {lesson.test_id ? (
+                        <span className="sr-only">Тест: </span>
+                      ) : null}
                       {lesson.title}
                     </span>
                   </li>

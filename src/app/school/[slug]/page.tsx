@@ -2,33 +2,22 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  BookOpenIcon,
-  CalendarIcon,
-  GlobeIcon,
-  MapPinIcon,
-  PhoneIcon,
-  StarIcon,
-} from "lucide-react";
+import { StarIcon } from "lucide-react";
 
+import {
+  SchoolCoursesStub,
+  SchoolShowcaseTabs,
+} from "@/components/showcase/school-showcase-tabs";
 import { WithSiteHeader } from "@/components/site/with-site-header";
-import { ShowcaseGallery } from "@/components/showcase/showcase-gallery";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import {
   messengerContactHref,
   websiteContactHref,
 } from "@/lib/organization/messenger-links";
 import {
   collectSocialLinkEntries,
-  isOrganizationSubscriptionActive,
   normalizeGalleryUrls,
   normalizePhoneList,
   parseProfileMessengers,
-  resolveSocialIconPath,
-  type SocialLinkEntry,
 } from "@/lib/organization/showcase-profile";
 import { createClient } from "@/lib/supabase/server";
 import { normalizeRichTextHtml } from "@/lib/utils/rich-text-content";
@@ -55,74 +44,22 @@ function decodeSlugParam(slug: string): string {
   }
 }
 
-function formatRating(value: number): string {
-  return new Intl.NumberFormat("ru-RU", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  }).format(value);
-}
-
-function formatPlatformSince(iso: string): string {
-  const year = new Date(iso).getFullYear();
-  if (Number.isNaN(year)) {
-    return "На платформе с 2024";
-  }
-  return `На платформе с ${year}`;
-}
-
-function telHref(phone: string): string {
-  return `tel:${phone.replace(/\s/g, "")}`;
-}
-
-function SocialIconLink({ entry }: { entry: SocialLinkEntry }) {
+function HeroStarRatingStub() {
   return (
-    <a
-      href={entry.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="border-border bg-background hover:border-brand/40 flex size-10 items-center justify-center rounded-lg border transition-colors"
-      aria-label={entry.label}
-      title={entry.label}
+    <div
+      className="flex flex-wrap items-center gap-2"
+      aria-label="Рейтинг: 5 из 5, 0 отзывов"
     >
-      <Image
-        src={entry.iconPath}
-        alt=""
-        width={24}
-        height={24}
-        className="size-6"
-        aria-hidden
-      />
-    </a>
-  );
-}
-
-function MessengerIconLink({
-  keyName,
-  href,
-  label,
-}: {
-  keyName: MessengerKey;
-  href: string;
-  label: string;
-}) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="border-border bg-background hover:border-brand/40 flex size-10 items-center justify-center rounded-lg border transition-colors"
-      aria-label={label}
-      title={label}
-    >
-      <Image
-        src={resolveSocialIconPath(keyName)}
-        alt=""
-        width={24}
-        height={24}
-        className="size-6"
-        aria-hidden
-      />
-    </a>
+      <div className="flex items-center gap-0.5" aria-hidden>
+        {Array.from({ length: 5 }).map((_, index) => (
+          <StarIcon
+            key={index}
+            className="size-4 fill-amber-400 text-amber-400"
+          />
+        ))}
+      </div>
+      <span className="text-muted-foreground text-sm">0 отзывов</span>
+    </div>
   );
 }
 
@@ -208,23 +145,13 @@ export default async function SchoolPage({ params }: PageProps) {
         logo_url,
         cover_url,
         website,
-        email,
         phone_main,
         phones,
         social_links,
         unp,
         legal_name,
         gallery,
-        messengers,
-        rating_avg,
-        reviews_count,
-        created_at,
-        organizations (
-          id,
-          name,
-          tier_id,
-          tier_expires_at
-        )
+        messengers
       `,
       )
       .eq("id", profileStub.id)
@@ -236,13 +163,9 @@ export default async function SchoolPage({ params }: PageProps) {
       .order("created_at", { ascending: true }),
   ]);
 
-  if (profileError) {
-    console.error("[SchoolPage] profile", profileError.message);
+  if (profileError || !profile) {
+    console.error("[SchoolPage] profile", profileError?.message);
     throw new Error("Не удалось загрузить витрину учебного центра");
-  }
-
-  if (!profile || !profile.organizations) {
-    notFound();
   }
 
   if (branchesError) {
@@ -250,8 +173,6 @@ export default async function SchoolPage({ params }: PageProps) {
     throw new Error("Не удалось загрузить филиалы учебного центра");
   }
 
-  const organization = profile.organizations;
-  const isActive = isOrganizationSubscriptionActive(organization);
   const messengers = parseProfileMessengers(profile.messengers);
   const branchRows = (branches ?? []) as BranchRow[];
   const phoneList = normalizePhoneList(profile.phones, profile.phone_main);
@@ -292,274 +213,108 @@ export default async function SchoolPage({ params }: PageProps) {
   return (
     <WithSiteHeader>
       <div className="bg-background min-h-screen">
-        {isActive ? (
-          <div className="border-brand/30 bg-brand/5 border-b">
-            <div className="mx-auto flex max-w-6xl items-center justify-center px-4 py-2">
-              <Badge variant="outline" className="border-brand text-brand">
-                Предпросмотр
-              </Badge>
-            </div>
-          </div>
-        ) : null}
+        {/* Hero — Job Board style */}
+        <section
+          aria-label="Учебный центр"
+          className="border-border/60 border-b bg-background"
+        >
+          <div
+            className="h-32 w-full bg-gradient-to-r from-brand/20 to-brand/5 lg:h-48 dark:from-brand/20 dark:to-brand/10"
+            aria-hidden
+          />
 
-        <main className="mx-auto max-w-6xl px-4 py-8 md:py-12">
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:gap-10">
-            {/* LEFT COLUMN */}
-            <div className="min-w-0 space-y-8 lg:col-span-8">
-              <header
-                aria-label="Учебный центр"
-                className="flex flex-col gap-5 sm:flex-row sm:items-start"
-              >
+          <div className="mx-auto max-w-6xl">
+            <div className="relative z-10 mt-0 flex flex-col justify-between gap-8 px-4 lg:flex-row lg:items-start lg:px-8">
+              <div className="min-w-0 flex-1">
                 {profile.logo_url ? (
-                  <div className="bg-muted flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border sm:size-24">
-                    <Image
-                      src={profile.logo_url}
-                      alt={`Логотип ${profile.public_name}`}
-                      width={96}
-                      height={96}
-                      className="size-full object-cover"
-                      unoptimized
-                    />
+                  <div className="border-background relative z-10 -mt-12 ml-4 w-fit rounded-xl border-4 bg-white p-1 shadow-md lg:ml-8 dark:bg-white">
+                    <div className="size-20 overflow-hidden rounded-lg sm:size-24">
+                      <Image
+                        src={profile.logo_url}
+                        alt={`Логотип ${profile.public_name}`}
+                        width={96}
+                        height={96}
+                        className="size-full object-cover"
+                        unoptimized
+                        priority
+                      />
+                    </div>
                   </div>
                 ) : null}
 
-                <div className="min-w-0 flex-1 space-y-3">
-                  <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
-                    {profile.public_name}
-                  </h1>
-                  {profile.short_description ? (
-                    <p className="text-muted-foreground text-lg leading-relaxed">
-                      {profile.short_description}
-                    </p>
-                  ) : null}
-                </div>
-              </header>
-
-              <div
-                aria-label="Статистика"
-                className="bg-muted/50 flex flex-wrap gap-3 rounded-xl border p-4"
-              >
-                <Badge variant="secondary" className="gap-1.5 px-3 py-1.5 text-sm">
-                  <BookOpenIcon className="size-4" aria-hidden />
-                  12 курсов
-                </Badge>
-                <Badge variant="secondary" className="gap-1.5 px-3 py-1.5 text-sm">
-                  <StarIcon className="size-4 fill-current" aria-hidden />
-                  {formatRating(profile.rating_avg)} ({profile.reviews_count}{" "}
-                  {profile.reviews_count === 1
-                    ? "отзыв"
-                    : profile.reviews_count >= 2 && profile.reviews_count <= 4
-                      ? "отзыва"
-                      : "отзывов"}
-                  )
-                </Badge>
-                <Badge variant="secondary" className="gap-1.5 px-3 py-1.5 text-sm">
-                  <CalendarIcon className="size-4" aria-hidden />
-                  {formatPlatformSince(profile.created_at)}
-                </Badge>
+                <h1 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+                  {profile.public_name}
+                </h1>
               </div>
 
-              <section aria-label="О центре" className="space-y-4">
-                <h2 className="text-xl font-semibold">О центре</h2>
-                {longDescriptionHtml ? (
-                  <div
-                    className="prose prose-sm text-foreground max-w-none dark:prose-invert prose-img:max-w-full prose-img:rounded-md [&_iframe]:aspect-video [&_iframe]:w-full [&_video]:w-full"
-                    dangerouslySetInnerHTML={{ __html: longDescriptionHtml }}
-                  />
-                ) : (
-                  <p className="text-muted-foreground text-sm">
-                    Подробное описание скоро появится.
-                  </p>
-                )}
-              </section>
-
-              {galleryUrls.length > 0 ? (
-                <section aria-label="Галерея" className="space-y-4">
-                  <h2 className="text-xl font-semibold">Галерея</h2>
-                  <ShowcaseGallery urls={galleryUrls} />
-                </section>
-              ) : null}
-
-              {hasLegalFooter ? (
-                <footer className="text-muted-foreground border-t pt-6 text-xs leading-relaxed">
-                  {profile.legal_name?.trim() ? (
-                    <p>{profile.legal_name.trim()}</p>
-                  ) : null}
-                  {profile.unp?.trim() ? (
-                    <p className="mt-1">УНП {profile.unp.trim()}</p>
-                  ) : null}
-                </footer>
-              ) : null}
-
-              <div className="pt-2">
-                <Link
-                  href="/"
-                  className="text-muted-foreground hover:text-foreground text-sm underline-offset-4 hover:underline"
-                >
-                  Вернуться на главную
-                </Link>
-              </div>
-            </div>
-
-            {/* RIGHT COLUMN */}
-            <aside className="space-y-6 lg:col-span-4 lg:sticky lg:top-6 lg:self-start">
               {profile.cover_url ? (
-                <div className="relative aspect-[3/2] overflow-hidden rounded-xl border shadow-sm">
+                <div className="relative aspect-video w-full shrink-0 overflow-hidden rounded-xl border shadow-lg lg:-mt-[140px] lg:w-[500px]">
                   <Image
                     src={profile.cover_url}
                     alt={`Обложка ${profile.public_name}`}
                     fill
                     className="object-cover"
-                    sizes="(max-width: 1024px) 100vw, 360px"
+                    sizes="(max-width: 1024px) 100vw, 500px"
                     priority
                     unoptimized
                   />
                 </div>
+              ) : (
+                <div
+                  className="bg-muted/60 border-border aspect-video w-full shrink-0 rounded-xl border border-dashed lg:-mt-[140px] lg:w-[500px]"
+                  aria-hidden
+                />
+              )}
+            </div>
+
+            <div className="mt-6 px-4 pb-8 lg:max-w-3xl lg:px-8 md:pb-10">
+              {profile.short_description ? (
+                <p className="text-muted-foreground text-base leading-relaxed md:text-lg">
+                  {profile.short_description}
+                </p>
               ) : null}
+              <div className="mt-4">
+                <HeroStarRatingStub />
+              </div>
+            </div>
+          </div>
+        </section>
 
-              <Card className="py-0 shadow-sm">
-                <CardContent className="space-y-5 p-5">
-                  <div className="grid gap-3">
-                    <Button type="button" className="w-full" size="lg">
-                      Оставить заявку
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="w-full"
-                      size="lg"
-                    >
-                      Задать вопрос
-                    </Button>
-                  </div>
+        {/* Tabs */}
+        <main className="mx-auto max-w-6xl px-4 py-8 md:py-10">
+          <SchoolShowcaseTabs
+            longDescriptionHtml={longDescriptionHtml}
+            galleryUrls={galleryUrls}
+            phoneList={phoneList}
+            website={profile.website}
+            websiteHref={websiteHref}
+            socialEntries={socialEntries}
+            messengerIconLinks={messengerIconLinks}
+            branchRows={branchRows}
+          />
 
-                  <Separator />
+          <section className="mt-12" aria-label="Курсы">
+            <SchoolCoursesStub />
+          </section>
 
-                  {(phoneList.length > 0 || websiteHref) && (
-                    <section aria-label="Контакты" className="space-y-3">
-                      <h2 className="text-sm font-semibold">Контакты</h2>
-                      <div className="space-y-2">
-                        {phoneList.map((phone, phoneIndex) => (
-                          <a
-                            key={`phone-${phoneIndex}-${phone}`}
-                            href={telHref(phone)}
-                            className="hover:text-brand flex items-center gap-2 text-sm transition-colors"
-                          >
-                            <PhoneIcon className="size-4 shrink-0" aria-hidden />
-                            <span>{phone}</span>
-                          </a>
-                        ))}
-                        {websiteHref ? (
-                          <a
-                            href={websiteHref}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="hover:text-brand flex items-center gap-2 text-sm transition-colors"
-                          >
-                            <GlobeIcon className="size-4 shrink-0" aria-hidden />
-                            <span className="truncate">{profile.website}</span>
-                          </a>
-                        ) : null}
-                      </div>
-                    </section>
-                  )}
+          {hasLegalFooter ? (
+            <footer className="text-muted-foreground mt-10 border-t pt-6 text-xs leading-relaxed">
+              {profile.legal_name?.trim() ? (
+                <p>{profile.legal_name.trim()}</p>
+              ) : null}
+              {profile.unp?.trim() ? (
+                <p className="mt-1">УНП {profile.unp.trim()}</p>
+              ) : null}
+            </footer>
+          ) : null}
 
-                  {socialEntries.length > 0 && (
-                    <>
-                      <Separator />
-                      <section
-                        aria-label="Социальные сети"
-                        className="space-y-3"
-                      >
-                        <h2 className="text-sm font-semibold">
-                          Социальные сети
-                        </h2>
-                        <div className="flex flex-wrap gap-2">
-                          {socialEntries.map((entry) => (
-                            <SocialIconLink key={entry.key} entry={entry} />
-                          ))}
-                        </div>
-                      </section>
-                    </>
-                  )}
-
-                  {messengerIconLinks.length > 0 && (
-                    <>
-                      <Separator />
-                      <section aria-label="Мессенджеры" className="space-y-3">
-                        <h2 className="text-sm font-semibold">Мессенджеры</h2>
-                        <div className="flex flex-wrap gap-2">
-                          {messengerIconLinks.map((entry) => (
-                            <MessengerIconLink
-                              key={entry.key}
-                              keyName={entry.key}
-                              href={entry.href}
-                              label={entry.label}
-                            />
-                          ))}
-                        </div>
-                      </section>
-                    </>
-                  )}
-
-                  <Separator />
-
-                  <section aria-label="Филиалы" className="space-y-3">
-                    <h2 className="text-sm font-semibold">Филиалы</h2>
-                    {branchRows.length > 0 ? (
-                      <ul className="space-y-3">
-                        {branchRows.map((branch) => (
-                          <li
-                            key={branch.id}
-                            className="border-border rounded-lg border p-3"
-                          >
-                            <div className="flex items-start gap-2">
-                              <MapPinIcon
-                                className="text-muted-foreground mt-0.5 size-4 shrink-0"
-                                aria-hidden
-                              />
-                              <div className="min-w-0 space-y-1 text-sm">
-                                <p className="font-medium">
-                                  {branch.label?.trim() || branch.city}
-                                </p>
-                                {branch.label?.trim() ? (
-                                  <p className="text-muted-foreground">
-                                    {branch.city}
-                                  </p>
-                                ) : null}
-                                <p className="text-muted-foreground">
-                                  {branch.address}
-                                </p>
-                                {branch.phone?.trim() ? (
-                                  <a
-                                    href={telHref(branch.phone)}
-                                    className="hover:text-brand inline-flex items-center gap-1.5 transition-colors"
-                                  >
-                                    <PhoneIcon className="size-3.5" aria-hidden />
-                                    {branch.phone.trim()}
-                                  </a>
-                                ) : null}
-                              </div>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-muted-foreground text-sm">
-                        Адреса филиалов пока не указаны.
-                      </p>
-                    )}
-
-                    <div
-                      aria-hidden
-                      className="bg-muted text-muted-foreground flex aspect-video items-center justify-center rounded-lg border border-dashed text-center text-sm"
-                    >
-                      Интерактивная карта Яндекс
-                    </div>
-                  </section>
-                </CardContent>
-              </Card>
-            </aside>
+          <div className="mt-6">
+            <Link
+              href="/"
+              className="text-muted-foreground hover:text-foreground text-sm underline-offset-4 hover:underline"
+            >
+              Вернуться на главную
+            </Link>
           </div>
         </main>
       </div>

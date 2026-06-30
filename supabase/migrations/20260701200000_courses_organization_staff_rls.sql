@@ -23,8 +23,7 @@ CREATE POLICY courses_insert_org_staff
   FOR INSERT
   TO authenticated
   WITH CHECK (
-    teacher_id = auth.uid()
-    AND organization_id IS NOT NULL
+    organization_id IS NOT NULL
     AND EXISTS (
       SELECT 1
       FROM public.organization_members AS om

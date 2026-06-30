@@ -12,7 +12,7 @@ import {
   type LearnModuleNav,
 } from "@/lib/learn/curriculum-order";
 import { fetchPublishedCourseForLearn } from "@/lib/learn/fetch-published-course";
-import type { Database, Json } from "@/types/database.types";
+import type { Database } from "@/types/database.types";
 
 type PageProps = {
   params: Promise<{ slug: string; lessonId: string }>;
@@ -28,7 +28,7 @@ function decodeSlugParam(slug: string): string {
 
 type LessonRow = Pick<
   Database["public"]["Tables"]["lessons"]["Row"],
-  "id" | "title" | "type" | "content" | "is_published" | "module_id" | "test_id"
+  "id" | "title" | "is_published" | "module_id" | "test_id"
 >;
 
 export default async function LearnLessonPlayerPage({ params }: PageProps) {
@@ -58,7 +58,7 @@ export default async function LearnLessonPlayerPage({ params }: PageProps) {
 
   const { data: lesson, error: lessonError } = await supabase
     .from("lessons")
-    .select("id, title, type, content, is_published, module_id, test_id")
+    .select("id, title, is_published, module_id, test_id")
     .eq("id", lessonId)
     .eq("is_published", true)
     .maybeSingle();
@@ -133,8 +133,6 @@ export default async function LearnLessonPlayerPage({ params }: PageProps) {
       lesson={{
         id: lessonRow.id,
         title: lessonRow.title,
-        type: lessonRow.type,
-        content: lessonRow.content as Json,
         test_id: lessonRow.test_id,
       }}
       blocks={blocks}
