@@ -7,8 +7,8 @@ import { SiteHeader } from "@/components/site-header";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
-  title: "Справочники",
-  description: "Управление таксономиями для фильтров каталога",
+  title: "Категории и теги",
+  description: "Управление категориями курсов и маркетинговыми тегами",
 };
 
 export default async function AdminTaxonomiesPage() {
@@ -50,10 +50,9 @@ export default async function AdminTaxonomiesPage() {
       <SiteHeader fullName={displayName} />
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Справочники</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Категории и теги</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Форматы, языки, аудитории, возрастные группы и уровни CEFR для
-            каталога курсов.
+            Категории с подкатегориями и маркетинговые теги для каталога курсов.
           </p>
         </div>
         <TaxonomiesAdminClient initialTaxonomies={result.data} />

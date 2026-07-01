@@ -9,7 +9,7 @@ import {
 } from "@/lib/auth/access";
 import { createClient } from "@/lib/supabase/server";
 import { createLessonSchema } from "@/lib/validations/curriculum-schema";
-import type { Database } from "@/types/database.types";
+import type { Database, Json } from "@/types/database.types";
 
 export type CurriculumActionState = {
   success?: boolean;

@@ -3,7 +3,7 @@
 import type { ComponentType, SVGProps } from "react";
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { CreditCard, ReceiptText, Settings, Store, Ticket, Wallet } from "lucide-react"
+import { CreditCard, ReceiptText, Settings, Store } from "lucide-react"
 
 import { signOut } from "@/app/actions/auth-actions"
 import { useLanguage } from "@/components/providers/language-provider"
@@ -16,7 +16,6 @@ import {
 import {
   GrowvyCatalogIcon,
   GrowvyCoursesIcon,
-  GrowvyDictionariesIcon,
   GrowvyGroupsIcon,
   GrowvyLearningIcon,
   GrowvyLogoutIcon,
@@ -25,6 +24,7 @@ import {
   GrowvyTestsIcon,
 } from "@/components/layout/growvy-icons";
 import type { ProfileRole } from "@/lib/dashboard/sidebar-nav";
+import { getSidebarNavGroupsForRole } from "@/lib/dashboard/sidebar-nav";
 import type { TranslationKey } from "@/lib/i18n/dict";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +33,11 @@ type NavItem = {
   labelKey?: TranslationKey;
   url: string;
   icon: ComponentType<SVGProps<SVGSVGElement>>;
+};
+
+type NavGroup = {
+  title?: string;
+  items: NavItem[];
 };
 
 const teacherNav: NavItem[] = [
@@ -67,40 +72,27 @@ const studentNav: NavItem[] = [
   },
 ];
 
-const adminNav: NavItem[] = [
-  { title: "Главная", url: "/dashboard", icon: GrowvyCatalogIcon },
-  {
-    title: "Справочники",
-    url: "/dashboard/admin/taxonomies",
-    icon: GrowvyDictionariesIcon,
-  },
-  {
-    title: "Тарифы",
-    url: "/dashboard/admin/tariffs",
-    icon: GrowvyDictionariesIcon,
-  },
-  {
-    title: "Настройки биллинга",
-    url: "/dashboard/admin/settings/billing",
-    icon: CreditCard,
-  },
-  {
-    title: "Счета клиентов",
-    url: "/dashboard/admin/invoices",
-    icon: Wallet,
-  },
-  {
-    title: "Промокоды",
-    url: "/dashboard/admin/coupons",
-    icon: Ticket,
-  },
-  { title: "Поддержка", url: "/dashboard/support", icon: GrowvySupportIcon },
-];
+function mapSidebarGroups(role: ProfileRole): NavGroup[] {
+  if (role === "teacher") {
+    return [{ items: teacherNav }];
+  }
 
-function getNavForRole(role: ProfileRole): NavItem[] {
-  if (role === "teacher") return teacherNav;
-  if (role === "admin") return adminNav;
-  return studentNav;
+  if (role === "student") {
+    return [{ items: studentNav }];
+  }
+
+  return getSidebarNavGroupsForRole("admin").map((group) => ({
+    title: group.title,
+    items: group.items.map((item) => ({
+      title: item.title,
+      url: item.url,
+      icon: item.icon,
+    })),
+  }));
+}
+
+function getNavForRole(role: ProfileRole): NavGroup[] {
+  return mapSidebarGroups(role);
 }
 
 function isActive(pathname: string, url: string): boolean {
@@ -202,7 +194,7 @@ function DashboardSidebarPanel({
 }: DashboardSidebarProps) {
   const pathname = usePathname();
   const { t } = useLanguage();
-  const items = getNavForRole(role);
+  const navGroups = getNavForRole(role);
 
   function navLabel(item: NavItem): string {
     if (role === "student" && item.labelKey) {
@@ -240,7 +232,21 @@ function DashboardSidebarPanel({
       </Link>
 
       <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
-        {items.map((item) => {
+        {navGroups.map((group, groupIndex) => (
+          <div key={group.title ?? `nav-group-${groupIndex}`} className="flex flex-col gap-1">
+            {group.title ? (
+              isCollapsed ? (
+                <div
+                  className="border-border mx-2 my-2 border-t"
+                  aria-hidden
+                />
+              ) : (
+                <p className="text-muted-foreground px-3 pt-3 pb-1 text-xs font-semibold tracking-wide uppercase">
+                  {group.title}
+                </p>
+              )
+            ) : null}
+            {group.items.map((item) => {
           const active = isActive(pathname, item.url);
           const badgeCount = navBadges[item.url] ?? 0;
           const pendingCount = navPendingBadges[item.url] ?? 0;
@@ -277,6 +283,8 @@ function DashboardSidebarPanel({
             </Link>
           );
         })}
+          </div>
+        ))}
       </nav>
 
       <div className="mt-auto flex shrink-0 flex-col gap-1 border-t border-border pt-4">

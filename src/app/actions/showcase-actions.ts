@@ -464,6 +464,13 @@ export async function submitProfileForModeration(
     };
   }
 
+  if (currentStatus !== "draft" && currentStatus !== "rejected") {
+    return {
+      ...emptyModerationState,
+      error: "Профиль нельзя отправить на модерацию в текущем статусе.",
+    };
+  }
+
   if (!canSubmitProfileForModeration(profile)) {
     return {
       ...emptyModerationState,
@@ -475,6 +482,7 @@ export async function submitProfileForModeration(
     .from("organization_profiles")
     .update({
       status: "moderation",
+      rejection_reason: null,
       updated_at: new Date().toISOString(),
     })
     .eq("organization_id", primaryTenant.organizationId);

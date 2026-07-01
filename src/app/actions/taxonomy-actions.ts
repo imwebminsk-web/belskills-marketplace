@@ -4,18 +4,13 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { isGlobalAdmin, loadGateProfile } from "@/lib/auth/access";
+import { getUserTenantsSafe, hasCreatorOrgAccess } from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database.types";
 
 export type TaxonomyRow = Database["public"]["Tables"]["taxonomies"]["Row"];
 
-const taxonomyTypeSchema = z.enum([
-  "format",
-  "language",
-  "audience",
-  "age_group",
-  "cefr_level",
-]);
+const taxonomyTypeSchema = z.enum(["category", "marketing_tag"]);
 
 const taxonomyInputSchema = z.object({
   type: taxonomyTypeSchema,
@@ -31,6 +26,7 @@ const taxonomyInputSchema = z.object({
     ),
   sort_order: z.coerce.number().int().min(0).max(999).optional(),
   is_active: z.boolean().optional(),
+  parent_id: z.string().uuid().nullable().optional(),
 });
 
 type ActionError = { success: false; error: string };
@@ -65,20 +61,42 @@ async function requireAdmin():
 
 function revalidateTaxonomyPaths() {
   revalidatePath("/dashboard/admin/taxonomies");
+  revalidatePath("/dashboard/courses/new");
+  revalidatePath("/dashboard/courses");
   revalidatePath("/");
 }
 
 export async function getTaxonomies(): Promise<
   ActionOk<TaxonomyRow[]> | ActionError
 > {
-  const auth = await requireAdmin();
-  if ("error" in auth) {
-    return auth;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Требуется вход в систему" };
   }
 
-  const { data, error } = await auth.supabase
+  const profile = await loadGateProfile(user.id);
+  const tenants = await getUserTenantsSafe(user.id);
+  const canRead =
+    isGlobalAdmin(profile) ||
+    hasCreatorOrgAccess(tenants) ||
+    profile?.role === "teacher" ||
+    profile?.role === "admin";
+
+  if (!canRead) {
+    return {
+      success: false,
+      error: "Справочник категорий доступен только сотрудникам и преподавателям",
+    };
+  }
+
+  const { data, error } = await supabase
     .from("taxonomies")
-    .select("*")
+    .select("id, label, type, parent_id, is_active, sort_order, value, created_at")
+    .in("type", ["category", "marketing_tag"])
     .order("type", { ascending: true })
     .order("sort_order", { ascending: true })
     .order("label", { ascending: true });
@@ -88,7 +106,7 @@ export async function getTaxonomies(): Promise<
     return { success: false, error: error.message };
   }
 
-  return { success: true, data: data ?? [] };
+  return { success: true, data: (data ?? []) as TaxonomyRow[] };
 }
 
 export async function createTaxonomy(
@@ -107,7 +125,7 @@ export async function createTaxonomy(
     };
   }
 
-  const { type, label, value, sort_order, is_active } = parsed.data;
+  const { type, label, value, sort_order, is_active, parent_id } = parsed.data;
 
   const { data, error } = await auth.supabase
     .from("taxonomies")
@@ -117,6 +135,7 @@ export async function createTaxonomy(
       value,
       sort_order: sort_order ?? 0,
       is_active: is_active ?? true,
+      parent_id: type === "category" ? (parent_id ?? null) : null,
     })
     .select("*")
     .single();
@@ -158,7 +177,7 @@ export async function updateTaxonomy(
     };
   }
 
-  const { type, label, value, sort_order, is_active } = parsed.data;
+  const { type, label, value, sort_order, is_active, parent_id } = parsed.data;
 
   const { data, error } = await auth.supabase
     .from("taxonomies")
@@ -168,6 +187,7 @@ export async function updateTaxonomy(
       value,
       sort_order: sort_order ?? 0,
       ...(is_active === undefined ? {} : { is_active }),
+      parent_id: type === "category" ? (parent_id ?? null) : null,
     })
     .eq("id", idParsed.data)
     .select("*")

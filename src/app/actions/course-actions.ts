@@ -4,31 +4,40 @@ import { randomUUID } from "node:crypto";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 
 import {
   canAccessOrganization,
   canManageCourse,
   hasStaffAccess,
+  isGlobalAdmin,
   loadAuthContext,
 } from "@/lib/auth/access";
+import { parseCourseStatus } from "@/lib/course/course-status";
 import { createClient } from "@/lib/supabase/server";
 import {
-  ageGroupFormSchema,
-  courseLanguageFormSchema,
-  courseLevelFormSchema,
-  deliveryFormatFormSchema,
-  marketingAudienceFormSchema,
+  AUDIENCE_LABEL_TO_CODE,
+  courseCreateSchema,
+  courseUpdateSchema,
+  DELIVERY_LABEL_TO_CODE,
+  DELIVERY_FORMAT_CODES,
+  type DeliveryFormatLabel,
+  type MarketingAudienceCode,
 } from "@/lib/validations/course-settings-schema";
 import type { Database } from "@/types/database.types";
 
 export type CreateCourseState = {
   success?: boolean;
   error?: string;
+  message?: string;
+  fieldErrors?: Record<string, string>;
 };
 
 export type UpdateCourseState = {
   success?: boolean;
   error?: string;
+  message?: string;
+  fieldErrors?: Record<string, string>;
 };
 
 /**
@@ -147,24 +156,245 @@ function sanitizeSlug(raw: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+function parseBooleanFormValue(formData: FormData, name: string): boolean {
+  return String(formData.get(name) ?? "").trim() === "true";
+}
+
+function normalizeDeliveryFormat(raw: string): string {
+  const trimmed = raw.trim();
+  if ((DELIVERY_FORMAT_CODES as readonly string[]).includes(trimmed)) {
+    return trimmed;
+  }
+  if (trimmed in DELIVERY_LABEL_TO_CODE) {
+    return DELIVERY_LABEL_TO_CODE[trimmed as DeliveryFormatLabel];
+  }
+  return trimmed;
+}
+
+function normalizeMarketingAudience(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed in AUDIENCE_LABEL_TO_CODE) {
+    return AUDIENCE_LABEL_TO_CODE[trimmed];
+  }
+  return trimmed;
+}
+
+function parsePromotionalImages(
+  raw: string,
+): { images: string[] } | { error: string } {
+  if (!raw.trim()) {
+    return { images: [] };
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return { error: "Некорректный формат галереи (ожидается массив URL)." };
+    }
+    const urls = parsed.filter(
+      (x): x is string =>
+        typeof x === "string" &&
+        x.trim().length > 0 &&
+        /^https?:\/\//i.test(x.trim()),
+    );
+    if (urls.length > 24) {
+      return { error: "В галерее не более 24 изображений." };
+    }
+    return { images: [...new Set(urls.map((u) => u.trim()))] };
+  } catch {
+    return { error: "Некорректный JSON галереи изображений." };
+  }
+}
+
+/** Извлекает поля формы курса в объект для Zod-валидации. */
+function parseCourseFormData(formData: FormData) {
+  const promotionalImagesRaw = String(
+    formData.get("promotional_images") ?? "",
+  ).trim();
+  const galleryParsed = parsePromotionalImages(promotionalImagesRaw);
+  const promotional_images =
+    "error" in galleryParsed ? [] : galleryParsed.images;
+  const promotionalImagesError =
+    "error" in galleryParsed ? galleryParsed.error : null;
+
+  return {
+    meta: {
+      organizationId:
+        String(formData.get("organizationId") ?? "").trim() || undefined,
+      promotionalImagesError,
+    },
+    raw: {
+      id: String(formData.get("id") ?? "").trim() || undefined,
+      title: String(formData.get("title") ?? "").trim(),
+      slug: String(formData.get("slug") ?? "").trim() || undefined,
+      description: String(formData.get("description") ?? "").trim(),
+      detailed_description: String(
+        formData.get("detailed_description") ?? "",
+      ).trim(),
+      price: String(formData.get("price") ?? "").trim(),
+      delivery_format: normalizeDeliveryFormat(
+        String(formData.get("delivery_format") ?? ""),
+      ),
+      marketing_audience: normalizeMarketingAudience(
+        String(formData.get("marketing_audience") ?? ""),
+      ),
+      category_id: String(formData.get("category_id") ?? "").trim(),
+      subcategory_id: String(formData.get("subcategory_id") ?? "").trim(),
+      marketing_tag_id: String(formData.get("marketing_tag_id") ?? "").trim(),
+      has_demo: parseBooleanFormValue(formData, "has_demo"),
+      is_belskills_partner: parseBooleanFormValue(
+        formData,
+        "is_belskills_partner",
+      ),
+      duration_value: String(formData.get("duration_value") ?? "").trim(),
+      duration_unit: String(formData.get("duration_unit") ?? "").trim(),
+      start_date: String(formData.get("start_date") ?? "").trim(),
+      has_certificate: parseBooleanFormValue(formData, "has_certificate"),
+      promotional_images,
+      youtube_url: String(formData.get("youtube_url") ?? "").trim(),
+      vimeo_url: String(formData.get("vimeo_url") ?? "").trim(),
+    },
+  };
+}
+
+async function resolveUniqueSlug(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  title: string,
+  rawSlug?: string,
+): Promise<{ slug: string } | { error: string }> {
+  const base =
+    rawSlug && rawSlug.length > 0
+      ? sanitizeSlug(rawSlug) || baseSlugFromTitle(title)
+      : baseSlugFromTitle(title);
+
+  if (!base) {
+    return { error: "URL курса не может быть пустым." };
+  }
+
+  let slug = base;
+  let suffix = 0;
+  const maxAttempts = 50;
+
+  while (suffix < maxAttempts) {
+    const candidate = suffix === 0 ? slug : `${base}-${suffix}`;
+    const { data: row } = await supabase
+      .from("courses")
+      .select("id")
+      .eq("slug", candidate)
+      .maybeSingle();
+
+    if (!row) {
+      return { slug: candidate };
+    }
+    suffix += 1;
+  }
+
+  return { error: "Не удалось подобрать уникальный адрес (slug) для курса." };
+}
+
+type CourseStatus = Database["public"]["Enums"]["course_status"];
+type TargetAudience = Database["public"]["Enums"]["target_audience"];
+
+type CourseCatalogWriteFields = {
+  title: string;
+  description: string | null;
+  detailed_description: string | null;
+  price: number;
+  status: CourseStatus;
+  delivery_format: string;
+  marketing_audience: MarketingAudienceCode;
+  target_audience: TargetAudience;
+  category_id: string;
+  subcategory_id: string | null;
+  marketing_tag_id: string | null;
+  has_demo: boolean;
+  is_belskills_partner: boolean;
+  duration_value: number | null;
+  duration_unit: string | null;
+  start_date: string | null;
+  has_certificate: boolean;
+  promotional_images: string[];
+  youtube_url: string | null;
+  vimeo_url: string | null;
+};
+
+function buildCourseCatalogFields(
+  data: z.infer<typeof courseCreateSchema>,
+  status: CourseStatus,
+): CourseCatalogWriteFields {
+  let start_date: string | null = null;
+  if (data.start_date?.trim()) {
+    const d = new Date(`${data.start_date}T00:00:00.000Z`);
+    if (!Number.isNaN(d.getTime())) {
+      start_date = d.toISOString();
+    }
+  }
+
+  return {
+    title: data.title,
+    description: data.description?.trim() ? data.description.trim() : null,
+    detailed_description: data.detailed_description?.trim()
+      ? data.detailed_description.trim()
+      : null,
+    price: data.price,
+    status,
+    delivery_format: data.delivery_format,
+    marketing_audience: data.marketing_audience,
+    target_audience: data.marketing_audience === "kids" ? "kids" : "adults",
+    category_id: data.category_id,
+    subcategory_id: data.subcategory_id ?? null,
+    marketing_tag_id: data.marketing_tag_id ?? null,
+    has_demo: data.has_demo,
+    is_belskills_partner: data.is_belskills_partner,
+    duration_value: data.duration_value ?? null,
+    duration_unit: data.duration_unit ?? null,
+    start_date,
+    has_certificate: data.has_certificate,
+    promotional_images: data.promotional_images,
+    youtube_url:
+      data.youtube_url && data.youtube_url !== "" ? data.youtube_url : null,
+    vimeo_url: data.vimeo_url && data.vimeo_url !== "" ? data.vimeo_url : null,
+  };
+}
+
+function zodFieldErrors(error: z.ZodError): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const issue of error.issues) {
+    const key = issue.path[0];
+    if (typeof key === "string" && !out[key]) {
+      out[key] = issue.message;
+    }
+  }
+  return out;
+}
+
+function zodErrorMessage(error: z.ZodError): string {
+  return error.issues[0]?.message ?? "Некорректные данные формы.";
+}
+
+function validationErrorState(error: z.ZodError): CreateCourseState {
+  return {
+    error: zodErrorMessage(error),
+    fieldErrors: zodFieldErrors(error),
+  };
+}
+
 export async function createCourse(
   _prev: CreateCourseState,
   formData: FormData,
 ): Promise<CreateCourseState> {
-  const title = String(formData.get("title") ?? "").trim();
-  const descriptionRaw = String(formData.get("description") ?? "").trim();
-  const priceRaw = String(formData.get("price") ?? "").trim();
-  const rawSlug = String(formData.get("slug") ?? "").trim();
+  const { meta, raw } = parseCourseFormData(formData);
 
-  if (!title) {
-    return { error: "Укажите название курса." };
+  if (meta.promotionalImagesError) {
+    return { error: meta.promotionalImagesError };
   }
 
-  const priceNum = Number(priceRaw);
-  if (!Number.isFinite(priceNum) || priceNum < 0) {
-    return { error: "Укажите корректную цену (число ≥ 0)." };
+  const parsed = courseCreateSchema.safeParse(raw);
+  if (!parsed.success) {
+    return validationErrorState(parsed.error);
   }
 
+  const data = parsed.data;
   const supabase = await createClient();
   const {
     data: { user },
@@ -186,11 +416,8 @@ export async function createCourse(
     };
   }
 
-  const organizationIdRaw = String(formData.get("organizationId") ?? "").trim();
   const organizationId =
-    organizationIdRaw.length > 0
-      ? organizationIdRaw
-      : (primaryTenant?.organizationId ?? null);
+    meta.organizationId ?? primaryTenant?.organizationId ?? null;
 
   if (!organizationId) {
     return { error: "Не указана организация для курса." };
@@ -200,198 +427,58 @@ export async function createCourse(
     return { error: "Нет доступа к этой организации." };
   }
 
-  const base =
-    rawSlug.length > 0
-      ? sanitizeSlug(rawSlug) || baseSlugFromTitle(title)
-      : baseSlugFromTitle(title);
-  let slug = base;
-  let suffix = 0;
-  const maxAttempts = 50;
-
-  while (suffix < maxAttempts) {
-    const candidate = suffix === 0 ? slug : `${base}-${suffix}`;
-    const { data: row } = await supabase
-      .from("courses")
-      .select("id")
-      .eq("slug", candidate)
-      .maybeSingle();
-
-    if (!row) {
-      slug = candidate;
-      break;
-    }
-    suffix += 1;
+  const slugResult = await resolveUniqueSlug(supabase, data.title, data.slug);
+  if ("error" in slugResult) {
+    return { error: slugResult.error };
   }
 
-  if (suffix >= maxAttempts) {
-    return { error: "Не удалось подобрать уникальный адрес (slug) для курса." };
-  }
+  const catalogFields = buildCourseCatalogFields(data, "draft");
 
-  const description = descriptionRaw.length > 0 ? descriptionRaw : null;
-  const price = priceNum;
+  const { data: inserted, error: insertError } = await supabase
+    .from("courses")
+    .insert({
+      ...catalogFields,
+      slug: slugResult.slug,
+      organization_id: organizationId,
+    })
+    .select("slug")
+    .single();
 
-  const { error: insertError } = await supabase.from("courses").insert({
-    title,
-    description,
-    price,
-    slug,
-    organization_id: organizationId,
-    status: "draft",
-  });
-
-  if (insertError) {
-    console.error("[createCourse]", insertError.message);
+  if (insertError || !inserted) {
+    console.error("[createCourse]", insertError?.message);
     return {
-      error: insertError.message || "Не удалось сохранить курс.",
+      error: insertError?.message || "Не удалось сохранить курс.",
     };
   }
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/courses");
-  return { success: true };
+  redirect(`/dashboard/courses/${inserted.slug}`);
 }
-
-type CourseStatus = Database["public"]["Enums"]["course_status"];
-type CourseLevel = Database["public"]["Enums"]["course_level"];
-type TargetAudience = Database["public"]["Enums"]["target_audience"];
-
-const DURATION_UNIT = new Set(["hours", "weeks", "months"]);
 
 export async function updateCourse(
   _prev: UpdateCourseState,
   formData: FormData,
 ): Promise<UpdateCourseState> {
-  const id = String(formData.get("id") ?? "").trim();
-  const title = String(formData.get("title") ?? "").trim();
-  const rawSlug = String(formData.get("slug") ?? "").trim();
-  const categoryRaw = String(formData.get("category") ?? "").trim();
-  const descriptionRaw = String(formData.get("description") ?? "").trim();
-  const detailedDescriptionRaw = String(
-    formData.get("detailed_description") ?? "",
-  ).trim();
-  const youtubeRaw = String(formData.get("youtube_url") ?? "").trim();
-  const vimeoRaw = String(formData.get("vimeo_url") ?? "").trim();
-  const priceRaw = String(formData.get("price") ?? "").trim();
-  const statusRaw = String(formData.get("status") ?? "").trim();
-  const levelRaw = String(formData.get("level") ?? "").trim();
-  const marketingAudienceRaw = String(
-    formData.get("marketing_audience") ?? "",
-  ).trim();
-  const ageGroupRaw = String(formData.get("age_group") ?? "").trim();
-  const durationValueRaw = String(formData.get("duration_value") ?? "").trim();
-  const durationUnitRaw = String(formData.get("duration_unit") ?? "").trim();
-  const startDateRaw = String(formData.get("start_date") ?? "").trim();
-  const hasCertificateRaw = String(formData.get("has_certificate") ?? "").trim();
-  const promotionalImagesRaw = String(
-    formData.get("promotional_images") ?? "",
-  ).trim();
-  const deliveryFormatRaw = String(
-    formData.get("delivery_format") ?? "",
-  ).trim();
-  const languageRaw = String(formData.get("language") ?? "").trim();
+  const { meta, raw } = parseCourseFormData(formData);
 
-  if (!id) {
-    return { error: "Не указан курс." };
+  if (meta.promotionalImagesError) {
+    return { error: meta.promotionalImagesError };
   }
 
-  if (!title) {
-    return { error: "Укажите название курса." };
+  const parsed = courseUpdateSchema.safeParse({
+    ...raw,
+    slug: raw.slug ? sanitizeSlug(raw.slug) : raw.slug,
+  });
+
+  if (!parsed.success) {
+    return validationErrorState(parsed.error);
   }
 
-  const newSlug = sanitizeSlug(rawSlug);
+  const data = parsed.data;
+  const newSlug = sanitizeSlug(data.slug ?? "");
   if (!newSlug) {
     return { error: "URL курса не может быть пустым." };
-  }
-
-  const priceNum = Number(priceRaw);
-  if (!Number.isFinite(priceNum) || priceNum < 0) {
-    return { error: "Укажите корректную цену (число ≥ 0)." };
-  }
-
-  if (statusRaw !== "draft" && statusRaw !== "published") {
-    return { error: "Некорректный статус курса." };
-  }
-
-  const audienceParsed = marketingAudienceFormSchema.safeParse(
-    marketingAudienceRaw,
-  );
-  if (!audienceParsed.success) {
-    return { error: "Некорректная целевая аудитория." };
-  }
-  const marketing_audience =
-    audienceParsed.data.length > 0 ? audienceParsed.data : null;
-
-  const levelParsed = courseLevelFormSchema.safeParse(levelRaw);
-  if (!levelParsed.success) {
-    return { error: "Некорректный уровень CEFR." };
-  }
-
-  const ageParsed = ageGroupFormSchema.safeParse(ageGroupRaw);
-  if (!ageParsed.success) {
-    return { error: "Некорректная возрастная группа." };
-  }
-
-  const deliveryParsed = deliveryFormatFormSchema.safeParse(deliveryFormatRaw);
-  if (!deliveryParsed.success) {
-    return { error: "Некорректный формат проведения." };
-  }
-
-  const languageParsed = courseLanguageFormSchema.safeParse(languageRaw);
-  if (!languageParsed.success) {
-    return { error: "Некорректный язык курса." };
-  }
-
-  let level: CourseLevel | null = null;
-  if (marketing_audience === "Взрослые") {
-    if (levelParsed.data === "") {
-      return { error: "Выберите уровень CEFR для аудитории «Взрослые»." };
-    }
-    level = levelParsed.data;
-  }
-
-  let age_group: string | null = null;
-  if (marketing_audience === "Дети") {
-    if (ageParsed.data === "") {
-      return {
-        error: "Выберите возрастную группу для аудитории «Дети».",
-      };
-    }
-    age_group = ageParsed.data;
-  }
-
-  if (durationUnitRaw.length > 0 && !DURATION_UNIT.has(durationUnitRaw)) {
-    return { error: "Некорректная единица длительности." };
-  }
-
-  let durationValue: number | null = null;
-  if (durationValueRaw.length > 0) {
-    const n = Number(durationValueRaw);
-    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
-      return { error: "Длительность: укажите целое число ≥ 0." };
-    }
-    durationValue = n;
-  }
-
-  let start_date: string | null = null;
-  if (startDateRaw.length > 0) {
-    const d = new Date(`${startDateRaw}T00:00:00.000Z`);
-    if (Number.isNaN(d.getTime())) {
-      return { error: "Некорректная дата старта." };
-    }
-    start_date = d.toISOString();
-  }
-
-  const status = statusRaw as CourseStatus;
-
-  const delivery_format =
-    deliveryParsed.data.length > 0 ? deliveryParsed.data : null;
-  const language = languageParsed.data.length > 0 ? languageParsed.data : null;
-
-  let target_audience: TargetAudience = "adults";
-  if (marketing_audience === "Дети") {
-    target_audience = "kids";
-  } else if (marketing_audience === "Взрослые") {
-    target_audience = "adults";
   }
 
   const supabase = await createClient();
@@ -411,8 +498,8 @@ export async function updateCourse(
 
   const { data: existing, error: fetchError } = await supabase
     .from("courses")
-    .select("id, organization_id, slug")
-    .eq("id", id)
+    .select("id, organization_id, slug, status")
+    .eq("id", data.id)
     .maybeSingle();
 
   if (fetchError || !existing) {
@@ -437,64 +524,18 @@ export async function updateCourse(
     }
   }
 
-  const description = descriptionRaw.length > 0 ? descriptionRaw : null;
-  const category = categoryRaw.length > 0 ? categoryRaw : null;
-  const detailed_description =
-    detailedDescriptionRaw.length > 0 ? detailedDescriptionRaw : null;
-  const youtube_url = youtubeRaw.length > 0 ? youtubeRaw : null;
-  const vimeo_url = vimeoRaw.length > 0 ? vimeoRaw : null;
-  const duration_unit =
-    durationUnitRaw.length > 0 ? durationUnitRaw : null;
-  const has_certificate = hasCertificateRaw === "true";
-  const price = priceNum;
-
-  let promotional_images: string[] = [];
-  if (promotionalImagesRaw.length > 0) {
-    try {
-      const parsed = JSON.parse(promotionalImagesRaw) as unknown;
-      if (!Array.isArray(parsed)) {
-        return { error: "Некорректный формат галереи (ожидается массив URL)." };
-      }
-      const urls = parsed.filter(
-        (x): x is string =>
-          typeof x === "string" &&
-          x.trim().length > 0 &&
-          /^https?:\/\//i.test(x.trim()),
-      );
-      if (urls.length > 24) {
-        return { error: "В галерее не более 24 изображений." };
-      }
-      promotional_images = [...new Set(urls.map((u) => u.trim()))];
-    } catch {
-      return { error: "Некорректный JSON галереи изображений." };
-    }
-  }
+  const catalogFields = buildCourseCatalogFields(
+    data,
+    parseCourseStatus(existing.status),
+  );
 
   const { error: updateError } = await supabase
     .from("courses")
     .update({
-      title,
+      ...catalogFields,
       slug: newSlug,
-      category,
-      description,
-      detailed_description,
-      youtube_url,
-      vimeo_url,
-      price,
-      status,
-      level,
-      marketing_audience,
-      age_group,
-      target_audience,
-      delivery_format,
-      language,
-      promotional_images,
-      duration_value: durationValue,
-      duration_unit,
-      start_date,
-      has_certificate,
     })
-    .eq("id", id);
+    .eq("id", data.id);
 
   if (updateError) {
     console.error("[updateCourse]", updateError.message);
@@ -512,9 +553,154 @@ export async function updateCourse(
   if (slugChanged) {
     revalidatePath(`/dashboard/courses/${newSlug}`);
     revalidatePath(`/courses/${encodeURIComponent(newSlug)}`);
-    redirect(`/dashboard/courses/${newSlug}`);
   }
 
+  return { success: true, message: "Курс успешно обновлен" };
+}
+
+type CourseModerationActionResult =
+  | { success: true }
+  | { success: false; error: string };
+
+function revalidateTeacherCoursePaths(slug: string) {
+  revalidatePath("/dashboard/courses");
+  revalidatePath(`/dashboard/courses/${slug}`);
+  revalidatePath("/dashboard/admin/courses");
+  revalidatePath("/");
+  revalidatePath(`/courses/${encodeURIComponent(slug)}`);
+}
+
+async function requireCourseManager(courseId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false as const, error: "Нужна авторизация." };
+  }
+
+  const { profile, tenants } = await loadAuthContext(user.id);
+
+  if (!profile) {
+    return { success: false as const, error: "Профиль не найден." };
+  }
+
+  const { data: course, error: fetchError } = await supabase
+    .from("courses")
+    .select("id, organization_id, slug, status, rejection_reason")
+    .eq("id", courseId)
+    .maybeSingle();
+
+  if (fetchError) {
+    console.error("[requireCourseManager] fetch", fetchError.message);
+    return { success: false as const, error: fetchError.message };
+  }
+
+  if (!course) {
+    return { success: false as const, error: "Курс не найден." };
+  }
+
+  if (!canManageCourse(profile, tenants, course)) {
+    return { success: false as const, error: "Нет прав на изменение этого курса." };
+  }
+
+  return { success: true as const, supabase, profile, course };
+}
+
+/** Преподаватель отправляет курс на проверку администратором. */
+export async function submitCourseForModeration(
+  courseId: string,
+): Promise<CourseModerationActionResult> {
+  const auth = await requireCourseManager(courseId);
+  if (!auth.success) {
+    return auth;
+  }
+
+  if (isGlobalAdmin(auth.profile)) {
+    return {
+      success: false,
+      error: "Глобальный администратор публикует курсы через панель модерации.",
+    };
+  }
+
+  const currentStatus = parseCourseStatus(auth.course.status);
+
+  if (currentStatus === "moderation") {
+    return { success: false, error: "Курс уже на модерации." };
+  }
+
+  if (currentStatus === "published") {
+    return { success: false, error: "Курс уже опубликован." };
+  }
+
+  if (
+    currentStatus !== "draft" &&
+    currentStatus !== "hidden" &&
+    currentStatus !== "rejected"
+  ) {
+    return {
+      success: false,
+      error: "Курс нельзя отправить на модерацию в текущем статусе.",
+    };
+  }
+
+  const { error: updateError } = await auth.supabase
+    .from("courses")
+    .update({
+      status: "moderation",
+      rejection_reason: null,
+    })
+    .eq("id", auth.course.id);
+
+  if (updateError) {
+    console.error("[submitCourseForModeration]", updateError.message);
+    return { success: false, error: "Не удалось отправить курс на модерацию." };
+  }
+
+  revalidateTeacherCoursePaths(auth.course.slug);
+  return { success: true };
+}
+
+/** Преподаватель снимает опубликованный курс с публикации (скрывает). */
+export async function unpublishCourseForTeacher(
+  courseId: string,
+): Promise<CourseModerationActionResult> {
+  const auth = await requireCourseManager(courseId);
+  if (!auth.success) {
+    return auth;
+  }
+
+  if (isGlobalAdmin(auth.profile)) {
+    return {
+      success: false,
+      error: "Используйте панель модерации курсов для управления публикацией.",
+    };
+  }
+
+  const currentStatus = parseCourseStatus(auth.course.status);
+
+  if (currentStatus !== "published") {
+    return {
+      success: false,
+      error: "Снять с публикации можно только опубликованный курс.",
+    };
+  }
+
+  const { error: updateError } = await auth.supabase
+    .from("courses")
+    .update({
+      status: "hidden",
+      rejection_reason: null,
+    })
+    .eq("id", auth.course.id);
+
+  if (updateError) {
+    console.error("[unpublishCourseForTeacher]", updateError.message);
+    return { success: false, error: "Не удалось снять курс с публикации." };
+  }
+
+  revalidateTeacherCoursePaths(auth.course.slug);
   return { success: true };
 }
 

@@ -1,13 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 
 export function LogoutButton() {
-  const router = useRouter();
   const [pending, setPending] = useState(false);
 
   async function handleLogout() {
@@ -23,8 +21,7 @@ export function LogoutButton() {
       return;
     }
 
-    router.refresh();
-    router.push("/");
+    window.location.assign("/");
   }
 
   return (

@@ -1,66 +1,100 @@
 import { z } from "zod";
 
-import type { Database } from "@/types/database.types";
+export const DELIVERY_FORMAT_CODES = ["online", "offline", "hybrid"] as const;
+export type DeliveryFormatCode = (typeof DELIVERY_FORMAT_CODES)[number];
 
-export type CourseLevel = Database["public"]["Enums"]["course_level"];
+export const MARKETING_AUDIENCE_CODES = ["kids", "adults"] as const;
+export type MarketingAudienceCode = (typeof MARKETING_AUDIENCE_CODES)[number];
 
-export const AUDIENCE_LABELS = ["Дети", "Взрослые", "Все"] as const;
+/** UI labels for legacy form controls (map to codes in server parsing). */
+export const DELIVERY_FORMAT_LABELS = ["Онлайн", "Офлайн", "Гибрид"] as const;
+export type DeliveryFormatLabel = (typeof DELIVERY_FORMAT_LABELS)[number];
+
+export const DELIVERY_LABEL_TO_CODE: Record<DeliveryFormatLabel, DeliveryFormatCode> = {
+  Онлайн: "online",
+  Офлайн: "offline",
+  Гибрид: "hybrid",
+};
+
+export const AUDIENCE_LABEL_TO_CODE: Record<string, MarketingAudienceCode> = {
+  Дети: "kids",
+  Взрослые: "adults",
+  kids: "kids",
+  adults: "adults",
+};
+
+export const AUDIENCE_CODE_TO_LABEL: Record<MarketingAudienceCode, string> = {
+  kids: "Дети",
+  adults: "Взрослые",
+};
+
+export const AUDIENCE_LABELS = ["Дети", "Взрослые"] as const;
 export type AudienceLabel = (typeof AUDIENCE_LABELS)[number];
 
-export const AGE_GROUP_LABELS = [
-  "5-6 лет",
-  "6-8 лет",
-  "9-13 лет",
-  "13-17 лет",
-] as const;
-export type AgeGroupLabel = (typeof AGE_GROUP_LABELS)[number];
+const durationUnitSchema = z.union([
+  z.literal(""),
+  z.enum(["hours", "weeks", "months"]),
+]);
 
-const LEVELS = [
-  "0",
-  "A1",
-  "A2",
-  "B1",
-  "B1+",
-  "B2",
-  "B2+",
-  "C1",
-  "C2",
-] as const satisfies readonly CourseLevel[];
+const optionalUrlSchema = z.union([
+  z.literal(""),
+  z.string().trim().url("Некорректный URL"),
+]);
 
-/** Значение аудитории из формы: пусто или одна из меток. */
+const nullableUuidSchema = z
+  .union([z.literal(""), z.string().uuid()])
+  .transform((value) => (value === "" ? null : value));
+
+const courseBaseObject = z.object({
+  title: z.string().trim().min(1, "Укажите название курса"),
+  slug: z.string().trim().optional(),
+  description: z.string().trim().optional(),
+  detailed_description: z.string().optional(),
+  price: z.coerce.number().min(0, "Цена должна быть ≥ 0"),
+  delivery_format: z.enum(DELIVERY_FORMAT_CODES, {
+    message: "Выберите формат: online, offline или hybrid",
+  }),
+  marketing_audience: z.enum(MARKETING_AUDIENCE_CODES, {
+    message: "Выберите аудиторию: kids или adults",
+  }),
+  category_id: z.string().uuid("Выберите категорию"),
+  subcategory_id: nullableUuidSchema.optional(),
+  marketing_tag_id: nullableUuidSchema.optional(),
+  has_demo: z.boolean().default(false),
+  is_belskills_partner: z.boolean().default(false),
+  duration_value: z
+    .union([z.literal(""), z.coerce.number().int().min(0)])
+    .optional()
+    .transform((value) =>
+      value === "" || value === undefined ? null : value,
+    ),
+  duration_unit: durationUnitSchema.optional(),
+  start_date: z.string().optional(),
+  has_certificate: z.boolean().default(false),
+  promotional_images: z.array(z.string().url()).max(24).default([]),
+  youtube_url: optionalUrlSchema.optional(),
+  vimeo_url: optionalUrlSchema.optional(),
+});
+
+export const courseCreateSchema = courseBaseObject;
+
+export const courseUpdateSchema = courseBaseObject.extend({
+  id: z.string().uuid("Некорректный идентификатор курса"),
+  slug: z.string().trim().min(1, "URL курса не может быть пустым"),
+});
+
+export type CourseFormData = z.infer<typeof courseCreateSchema>;
+export type CourseCreateInput = z.infer<typeof courseCreateSchema>;
+export type CourseUpdateInput = z.infer<typeof courseUpdateSchema>;
+
+/** @deprecated Use MARKETING_AUDIENCE_CODES in server actions. */
 export const marketingAudienceFormSchema = z.union([
   z.literal(""),
   z.enum(["Дети", "Взрослые", "Все"]),
 ]);
 
-/** Возрастная группа из формы. */
-export const ageGroupFormSchema = z.union([
-  z.literal(""),
-  z.enum(["5-6 лет", "6-8 лет", "9-13 лет", "13-17 лет"]),
-]);
-
-/** CEFR из формы (пусто, если поле не отправлялось). */
-export const courseLevelFormSchema = z.union([z.literal(""), z.enum(LEVELS)]);
-
-export const DELIVERY_FORMAT_LABELS = ["Онлайн", "Офлайн", "Гибрид"] as const;
-export type DeliveryFormatLabel = (typeof DELIVERY_FORMAT_LABELS)[number];
-
-export const COURSE_LANGUAGE_LABELS = [
-  "Английский",
-  "Испанский",
-  "Французский",
-  "Немецкий",
-  "Китайский",
-  "Русский",
-] as const;
-export type CourseLanguageLabel = (typeof COURSE_LANGUAGE_LABELS)[number];
-
+/** @deprecated Use DELIVERY_FORMAT_CODES in server actions. */
 export const deliveryFormatFormSchema = z.union([
   z.literal(""),
   z.enum(DELIVERY_FORMAT_LABELS),
-]);
-
-export const courseLanguageFormSchema = z.union([
-  z.literal(""),
-  z.enum(COURSE_LANGUAGE_LABELS),
 ]);

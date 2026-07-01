@@ -120,10 +120,7 @@ export function CourseImageUpload({
     <div className="border-border bg-muted/20 space-y-3 rounded-lg border p-4">
       <div className="flex flex-col gap-1">
         <p className="text-sm font-medium">Обложка курса</p>
-        <p className="text-muted-foreground text-xs">
-          Загрузка в bucket «{BUCKET}» (публичный URL сохраняется в{" "}
-          <code className="bg-muted rounded px-1">image_url</code>).
-        </p>
+        <p className="text-muted-foreground text-xs">Картинки не более 5МБ.</p>
       </div>
 
       <div

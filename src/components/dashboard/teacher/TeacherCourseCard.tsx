@@ -4,6 +4,10 @@ import { BookOpenIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCoursePrice } from "@/lib/format-course-price";
+import {
+  courseStatusLabel,
+  parseCourseStatus,
+} from "@/lib/course/course-status";
 import { cn } from "@/lib/utils";
 import type { Database } from "@/types/database.types";
 
@@ -17,7 +21,8 @@ type TeacherCourseCardProps = {
 };
 
 export function TeacherCourseCard({ course }: TeacherCourseCardProps) {
-  const isPublished = course.status === "published";
+  const status = parseCourseStatus(course.status);
+  const isPublished = status === "published";
   const editHref = `/dashboard/courses/${encodeURIComponent(course.slug)}`;
   const description = course.description?.trim() || "Без описания";
 
@@ -42,10 +47,12 @@ export function TeacherCourseCard({ course }: TeacherCourseCardProps) {
             "absolute top-3 left-3 rounded-md border-0 px-2.5 py-1 text-xs font-medium shadow-sm",
             isPublished
               ? "bg-white/95 text-brand"
-              : "bg-white/95 text-amber-800",
+              : status === "rejected"
+                ? "bg-destructive/90 text-white"
+                : "bg-white/95 text-amber-800",
           )}
         >
-          {isPublished ? "Опубликован" : "Черновик"}
+          {courseStatusLabel(status)}
         </Badge>
       </div>
 

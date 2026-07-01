@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -16,7 +15,6 @@ type LoginFormProps = {
 };
 
 export function LoginForm({ redirectTo = "/dashboard" }: LoginFormProps) {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -40,8 +38,7 @@ export function LoginForm({ redirectTo = "/dashboard" }: LoginFormProps) {
       return;
     }
 
-    router.refresh();
-    router.push(redirectTo);
+    window.location.assign(redirectTo);
   }
 
   return (

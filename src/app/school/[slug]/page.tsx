@@ -187,24 +187,28 @@ export default async function SchoolPage({ params }: PageProps) {
     ? websiteContactHref(profile.website)
     : null;
 
-  const messengerIconLinks: {
-    key: MessengerKey;
-    href: string;
-    label: string;
-  }[] = (
+  const messengerIconLinks = (
     [
-      { key: "telegram" as const, label: "Telegram", value: messengers.telegram },
-      { key: "viber" as const, label: "Viber", value: messengers.viber },
-      { key: "whatsapp" as const, label: "WhatsApp", value: messengers.whatsapp },
+      { key: "telegram" as const, label: "Telegram" as const, value: messengers.telegram },
+      { key: "viber" as const, label: "Viber" as const, value: messengers.viber },
+      { key: "whatsapp" as const, label: "WhatsApp" as const, value: messengers.whatsapp },
     ] as const
   )
-    .map((entry) => ({
-      key: entry.key,
-      label: entry.label,
-      href: messengerContactHref(entry.key, entry.value),
-    }))
-    .filter((entry): entry is { key: MessengerKey; href: string; label: string } =>
-      Boolean(entry.href),
+    .map((entry) => {
+      const href = messengerContactHref(entry.key, entry.value);
+      if (!href) {
+        return null;
+      }
+      return { key: entry.key, label: entry.label, href };
+    })
+    .filter(
+      (
+        entry,
+      ): entry is {
+        key: MessengerKey;
+        href: string;
+        label: "Telegram" | "Viber" | "WhatsApp";
+      } => entry !== null,
     );
 
   const hasLegalFooter =

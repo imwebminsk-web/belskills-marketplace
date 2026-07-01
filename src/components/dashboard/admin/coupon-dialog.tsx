@@ -77,8 +77,8 @@ export function CouponDialog({
         code: String(formData.get("code") ?? "").toUpperCase(),
         discount_type: discountType,
         discount_value: formData.get("discount_value"),
-        max_uses: formData.get("max_uses") || null,
-        expires_at: formData.get("expires_at") || null,
+        max_uses: String(formData.get("max_uses") ?? "") || null,
+        expires_at: String(formData.get("expires_at") ?? "") || null,
         is_active: isActive,
       });
 

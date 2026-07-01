@@ -102,7 +102,11 @@ function AdminStatCards({ metrics }: { metrics: AdminDashboardMetrics }) {
   );
 }
 
-function DefaultSectionCards({ cards }: { cards: DashboardSectionCard[] }) {
+function DefaultSectionCards({
+  cards = [],
+}: {
+  cards?: DashboardSectionCard[]
+}) {
   return (
     <div className="*:data-[slot=card]:shadow-xs grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card md:grid-cols-2 lg:grid-cols-4 lg:px-6">
       {cards.map((card) => (
@@ -144,11 +148,11 @@ function DefaultSectionCards({ cards }: { cards: DashboardSectionCard[] }) {
 }
 
 export function SectionCards({
-  cards,
+  cards = [],
   teacherMetrics,
   adminMetrics,
 }: {
-  cards: DashboardSectionCard[]
+  cards?: DashboardSectionCard[]
   teacherMetrics?: TeacherDashboardMetrics
   adminMetrics?: AdminDashboardMetrics
 }) {

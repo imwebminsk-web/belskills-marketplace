@@ -122,11 +122,12 @@ export function CheckoutForm({
       }
 
       const method = formData.get("paymentMethod");
+      const resolvedMethod: PaymentMethod =
+        method === "bank_transfer" ? "bank_transfer" : "card";
       return {
         success: true,
         requestId: result.requestId,
-        paymentMethod:
-          method === "bank_transfer" ? "bank_transfer" : "card",
+        paymentMethod: resolvedMethod,
       };
     },
     initialState,

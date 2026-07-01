@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
+import { deferredRouterRefresh } from "@/lib/navigation/deferred-router";
 import { createClient } from "@/lib/supabase/client";
 
 const GLOBAL_CHANNEL_NAME = "global-cohort-messages";
@@ -10,11 +11,13 @@ const GLOBAL_CHANNEL_NAME = "global-cohort-messages";
 export function GlobalChatListener() {
   const router = useRouter();
   const currentUserIdRef = useRef<string | null>(null);
+  const routerReadyRef = useRef(false);
 
   useEffect(() => {
     const supabase = createClient();
     let channel: ReturnType<typeof supabase.channel> | null = null;
     let cancelled = false;
+    routerReadyRef.current = false;
 
     void (async () => {
       const {
@@ -41,13 +44,14 @@ export function GlobalChatListener() {
             table: "cohort_messages",
           },
           (payload) => {
+            if (!routerReadyRef.current) return;
             const row = payload.new as { user_id?: string } | null;
             if (row?.user_id && row.user_id !== currentUserIdRef.current) {
               const audio = new Audio("/pop.mp3");
               audio.play().catch((err) =>
                 console.warn("Audio play blocked by browser:", err),
               );
-              router.refresh();
+              deferredRouterRefresh(router);
             }
           },
         )
@@ -61,10 +65,12 @@ export function GlobalChatListener() {
       }
 
       channel = nextChannel;
+      routerReadyRef.current = true;
     })();
 
     return () => {
       cancelled = true;
+      routerReadyRef.current = false;
       if (channel) {
         void supabase.removeChannel(channel);
       }

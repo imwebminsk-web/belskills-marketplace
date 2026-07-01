@@ -1,3 +1,6 @@
+import { redirect } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
+
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database.types";
 
@@ -14,21 +17,61 @@ export type GateProfile = Pick<
   "id" | "role" | "is_global_admin"
 >;
 
+/** Partial profile rows from page-level Supabase selects. */
+export type GateProfileLike = {
+  id?: string;
+  role?: Database["public"]["Enums"]["profile_role"];
+  is_global_admin?: boolean | null;
+};
+
+export type GlobalAdminProfile = GateProfile & {
+  full_name: string | null;
+};
+
 export function isGlobalAdmin(
-  profile: GateProfile | null | undefined,
+  profile: GateProfileLike | null | undefined,
 ): boolean {
   return profile?.is_global_admin === true;
 }
 
+/** Server Component guard: redirects unauthenticated or non-admin users. */
+export async function requireGlobalAdmin(): Promise<{
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  user: User;
+  profile: GlobalAdminProfile;
+}> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  const profile = await supabase
+    .from("profiles")
+    .select("id, role, is_global_admin, full_name")
+    .eq("id", user.id)
+    .maybeSingle()
+    .then(({ data }) => data);
+
+  if (!profile || !isGlobalAdmin(profile)) {
+    redirect("/dashboard");
+  }
+
+  return { supabase, user, profile };
+}
+
 export function hasStaffAccess(
-  profile: GateProfile | null | undefined,
+  profile: GateProfileLike | null | undefined,
   tenants: UserTenant[],
 ): boolean {
   return isGlobalAdmin(profile) || hasCreatorOrgAccess(tenants);
 }
 
 export function canAccessOrganization(
-  profile: GateProfile | null | undefined,
+  profile: GateProfileLike | null | undefined,
   tenants: UserTenant[],
   organizationId: string,
 ): boolean {
@@ -43,7 +86,7 @@ export function canAccessOrganization(
 }
 
 export function canManageCourse(
-  profile: GateProfile | null | undefined,
+  profile: GateProfileLike | null | undefined,
   tenants: UserTenant[],
   course: { organization_id: string | null },
 ): boolean {

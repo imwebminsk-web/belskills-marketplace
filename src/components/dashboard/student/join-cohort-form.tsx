@@ -8,6 +8,7 @@ import {
   joinCohortByPin,
   type JoinCohortByPinState,
 } from "@/app/actions/enrollment-actions";
+import { deferredRouterPush } from "@/lib/navigation/deferred-router";
 import { useLanguage } from "@/components/providers/language-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,7 +53,7 @@ export function JoinCohortForm() {
     if (successHandled.current) return;
     successHandled.current = true;
     toast.success(t("dashboard.enrollSuccess"));
-    router.push(state.redirectUrl);
+    deferredRouterPush(router, state.redirectUrl);
   }, [state.success, state.redirectUrl, router, t]);
 
   return (

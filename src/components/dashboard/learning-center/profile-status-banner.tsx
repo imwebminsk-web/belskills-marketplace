@@ -102,6 +102,41 @@ export function ProfileStatusBanner({ profile }: ProfileStatusBannerProps) {
     );
   }
 
+  if (status === "rejected") {
+    return (
+      <div className="space-y-3">
+        <div
+          className={cn(
+            "rounded-lg border px-4 py-3 text-sm",
+            "border-destructive/40 bg-destructive/10 text-destructive",
+          )}
+          role="alert"
+        >
+          <p className="font-medium">Профиль отклонён</p>
+          <p className="mt-1">
+            {profile.rejection_reason?.trim() ||
+              "Модератор оставил комментарий без текста. Исправьте данные и отправьте снова."}
+          </p>
+        </div>
+        {feedback.error ? (
+          <p className="text-destructive text-sm" role="alert">
+            {feedback.error}
+          </p>
+        ) : null}
+        {feedback.success ? (
+          <p className="text-brand text-sm">Профиль снова отправлен на проверку.</p>
+        ) : null}
+        <Button
+          type="button"
+          onClick={handleSubmitForModeration}
+          disabled={!canSubmit || isPending}
+        >
+          {isPending ? "Отправка…" : "Отправить повторно на проверку"}
+        </Button>
+      </div>
+    );
+  }
+
   if (status === "published" || status === "hidden") {
     return (
       <div className="space-y-3">

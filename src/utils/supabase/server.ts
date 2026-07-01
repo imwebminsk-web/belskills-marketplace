@@ -5,7 +5,7 @@ import type { Database } from "@/types/database.types";
 
 /**
  * Клиент для Server Components, Server Actions и Route Handlers.
- * Обновление сессии по refresh token выполняется в `middleware` (`updateSession`);
+ * Обновление сессии по refresh token выполняется в `proxy` (`updateSession`);
  * здесь `setAll` в read-only контексте может бросать — это ожидаемо.
  */
 export async function createClient() {
@@ -25,7 +25,7 @@ export async function createClient() {
               cookieStore.set(name, value, options),
             );
           } catch {
-            /* Server Component — set недоступен; сессия обновляется в middleware */
+            /* Server Component — set недоступен; сессия обновляется в proxy */
           }
         },
       },

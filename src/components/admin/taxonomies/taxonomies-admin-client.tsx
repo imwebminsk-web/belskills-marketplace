@@ -31,6 +31,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
   Table,
@@ -43,29 +50,23 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
-const TAXONOMY_TYPES = [
-  "format",
-  "language",
-  "audience",
-  "age_group",
-  "cefr_level",
-] as const;
+const TAXONOMY_TYPES = ["category", "marketing_tag"] as const;
 
 type TaxonomyType = (typeof TAXONOMY_TYPES)[number];
 
 const TYPE_LABELS: Record<TaxonomyType, string> = {
-  format: "Формат",
-  language: "Язык",
-  audience: "Аудитория",
-  age_group: "Возраст",
-  cefr_level: "Уровень CEFR",
+  category: "Категории",
+  marketing_tag: "Маркетинговые теги",
 };
+
+const ROOT_PARENT_VALUE = "__root__";
 
 type FormState = {
   type: TaxonomyType;
   label: string;
   value: string;
   sort_order: string;
+  parent_id: string | null;
 };
 
 const emptyForm = (type: TaxonomyType): FormState => ({
@@ -73,23 +74,33 @@ const emptyForm = (type: TaxonomyType): FormState => ({
   label: "",
   value: "",
   sort_order: "0",
+  parent_id: null,
 });
 
 type TaxonomiesAdminClientProps = {
   initialTaxonomies: TaxonomyRow[];
 };
 
+type TaxonomyRowWithParent = TaxonomyRow & { parentLabel: string };
+
+type SortKey = "label" | "parentLabel";
+
 export function TaxonomiesAdminClient({
   initialTaxonomies,
 }: TaxonomiesAdminClientProps) {
   const [taxonomies, setTaxonomies] = useState(initialTaxonomies);
-  const [activeTab, setActiveTab] = useState<TaxonomyType>("format");
+  const [activeTab, setActiveTab] = useState<TaxonomyType>("category");
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<TaxonomyRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TaxonomyRow | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm("format"));
+  const [form, setForm] = useState<FormState>(emptyForm("category"));
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortConfig, setSortConfig] = useState<{
+    key: SortKey;
+    direction: "asc" | "desc";
+  } | null>(null);
 
   const grouped = useMemo(() => {
     const map = new Map<TaxonomyType, TaxonomyRow[]>();
@@ -102,6 +113,70 @@ export function TaxonomiesAdminClient({
     }
     return map;
   }, [taxonomies]);
+
+  const labelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of taxonomies) {
+      map.set(row.id, row.label);
+    }
+    return map;
+  }, [taxonomies]);
+
+  const displayRowsByType = useMemo(() => {
+    const result = new Map<TaxonomyType, TaxonomyRowWithParent[]>();
+    const query = searchQuery.trim().toLowerCase();
+
+    for (const type of TAXONOMY_TYPES) {
+      const rows = grouped.get(type) ?? [];
+      let mapped: TaxonomyRowWithParent[] = rows.map((row) => ({
+        ...row,
+        parentLabel: row.parent_id
+          ? (labelById.get(row.parent_id) ?? "")
+          : "",
+      }));
+
+      if (query) {
+        mapped = mapped.filter(
+          (item) =>
+            item.label.toLowerCase().includes(query) ||
+            item.parentLabel.toLowerCase().includes(query),
+        );
+      }
+
+      if (sortConfig) {
+        mapped = [...mapped].sort((a, b) => {
+          const cmp = a[sortConfig.key].localeCompare(
+            b[sortConfig.key],
+            "ru",
+          );
+          return sortConfig.direction === "asc" ? cmp : -cmp;
+        });
+      }
+
+      result.set(type, mapped);
+    }
+
+    return result;
+  }, [grouped, labelById, searchQuery, sortConfig]);
+
+  function toggleSort(key: SortKey) {
+    setSortConfig((prev) => {
+      if (prev?.key === key) {
+        return { key, direction: prev.direction === "asc" ? "desc" : "asc" };
+      }
+      return { key, direction: "asc" };
+    });
+  }
+  const rootCategories = useMemo(
+    () =>
+      taxonomies.filter(
+        (row) =>
+          row.type === "category" &&
+          row.parent_id === null &&
+          row.id !== editing?.id,
+      ),
+    [taxonomies, editing?.id],
+  );
 
   function openCreate(type: TaxonomyType) {
     setEditing(null);
@@ -117,6 +192,7 @@ export function TaxonomiesAdminClient({
       label: row.label,
       value: row.value,
       sort_order: String(row.sort_order),
+      parent_id: row.parent_id,
     });
     setError(null);
     setFormOpen(true);
@@ -130,6 +206,8 @@ export function TaxonomiesAdminClient({
         label: form.label,
         value: form.value,
         sort_order: Number(form.sort_order),
+        parent_id:
+          form.type === "category" ? form.parent_id : null,
       };
 
       const result = editing
@@ -218,7 +296,9 @@ export function TaxonomiesAdminClient({
               <div>
                 <h2 className="text-lg font-semibold">{TYPE_LABELS[type]}</h2>
                 <p className="text-muted-foreground text-sm">
-                  Значения справочника для фильтров каталога и форм курсов.
+                  {type === "category"
+                    ? "Иерархия категорий и подкатегорий для каталога курсов."
+                    : "Теги для маркетинговых фильтров и карточек курсов."}
                 </p>
               </div>
               <Button
@@ -232,12 +312,32 @@ export function TaxonomiesAdminClient({
               </Button>
             </div>
 
+            <Input
+              placeholder="Поиск по подписи или родителю..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="mb-4 max-w-sm rounded-xl"
+            />
+
             <div className="border-border overflow-hidden rounded-xl border bg-card shadow-sm">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Подпись</TableHead>
-                    <TableHead>Значение</TableHead>
+                    <TableHead
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => toggleSort("label")}
+                    >
+                      Подпись
+                    </TableHead>
+                    <TableHead>Slug</TableHead>
+                    {type === "category" ? (
+                      <TableHead
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => toggleSort("parentLabel")}
+                      >
+                        Родительская категория
+                      </TableHead>
+                    ) : null}
                     <TableHead className="w-24 text-center">Порядок</TableHead>
                     <TableHead className="w-28 text-center">Активно</TableHead>
                     <TableHead className="w-36 text-right">Действия</TableHead>
@@ -247,24 +347,36 @@ export function TaxonomiesAdminClient({
                   {(grouped.get(type) ?? []).length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={5}
+                        colSpan={type === "category" ? 6 : 5}
                         className="text-muted-foreground py-10 text-center"
                       >
                         Записей пока нет. Добавьте первое значение.
                       </TableCell>
                     </TableRow>
+                  ) : (displayRowsByType.get(type) ?? []).length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={type === "category" ? 6 : 5}
+                        className="text-muted-foreground py-10 text-center"
+                      >
+                        Ничего не найдено. Измените поисковый запрос.
+                      </TableCell>
+                    </TableRow>
                   ) : (
-                    (grouped.get(type) ?? []).map((row) => (
+                    (displayRowsByType.get(type) ?? []).map((row) => (
                       <TableRow
                         key={row.id}
                         className={cn(!row.is_active && "opacity-60")}
                       >
                         <TableCell className="font-medium">{row.label}</TableCell>
-                        <TableCell>
-                          <code className="bg-muted rounded-md px-2 py-1 text-xs">
-                            {row.value}
-                          </code>
+                        <TableCell className="font-mono text-xs text-muted-foreground">
+                          {row.value}
                         </TableCell>
+                        {type === "category" ? (
+                          <TableCell className="text-muted-foreground">
+                            {row.parentLabel || "—"}
+                          </TableCell>
+                        ) : null}
                         <TableCell className="text-center tabular-nums">
                           {row.sort_order}
                         </TableCell>
@@ -320,6 +432,37 @@ export function TaxonomiesAdminClient({
             </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-2">
+            {activeTab === "category" ? (
+              <div className="grid gap-2">
+                <Label htmlFor="taxonomy-parent">Родительская категория</Label>
+                <Select
+                  value={form.parent_id ?? ROOT_PARENT_VALUE}
+                  onValueChange={(value) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      parent_id: value === ROOT_PARENT_VALUE ? null : value,
+                    }))
+                  }
+                >
+                  <SelectTrigger
+                    id="taxonomy-parent"
+                    className="w-full rounded-xl"
+                  >
+                    <SelectValue placeholder="Корневая категория" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value={ROOT_PARENT_VALUE}>
+                      Корневая категория
+                    </SelectItem>
+                    {rootCategories.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
             <div className="grid gap-2">
               <Label htmlFor="taxonomy-label">Подпись (label)</Label>
               <Input
@@ -329,7 +472,9 @@ export function TaxonomiesAdminClient({
                 onChange={(e) =>
                   setForm((prev) => ({ ...prev, label: e.target.value }))
                 }
-                placeholder="Например, Онлайн"
+                placeholder={
+                  activeTab === "category" ? "Например, Иностранные языки" : "Например, Хит продаж"
+                }
               />
             </div>
             <div className="grid gap-2">
@@ -344,7 +489,7 @@ export function TaxonomiesAdminClient({
                     value: e.target.value.toLowerCase(),
                   }))
                 }
-                placeholder="online"
+                placeholder="foreign-languages"
               />
               <p className="text-muted-foreground text-xs">
                 Латиница, цифры и дефис: `english`, `b1-plus`, `5-6`

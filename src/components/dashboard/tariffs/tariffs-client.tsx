@@ -45,6 +45,8 @@ function periodToggleLabel(tariffs: TariffRow[], period: BillingPeriod): string 
   return maxDiscount > 0 ? `${base} · −${maxDiscount}%` : base;
 }
 
+type TariffType = "paid" | "free";
+
 type TariffsClientProps = {
   tariffs: TariffRow[];
   subscriptionState: OrganizationSubscriptionState;

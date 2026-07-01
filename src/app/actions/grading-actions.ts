@@ -67,7 +67,8 @@ export async function getPendingReviewCounts(): Promise<GetPendingReviewCountsRe
     return { success: false, error: "Нужна авторизация." };
   }
 
-  const { profile, tenants } = await loadAuthContext(user.id);
+  const authedUserId = user.id;
+  const { profile, tenants } = await loadAuthContext(authedUserId);
   if (!profile) {
     return { success: false, error: "Профиль не найден." };
   }
@@ -83,7 +84,10 @@ export async function getPendingReviewCounts(): Promise<GetPendingReviewCountsRe
       .select("id");
 
     if (orgsError) {
-      console.error("[getPendingReviewCounts] organizations", orgsError.message);
+      console.error(
+        "[getPendingReviewCounts] organizations",
+        orgsError.message ?? "unknown error",
+      );
       return { success: false, error: "Не удалось загрузить сдачи на проверку." };
     }
 
@@ -102,7 +106,10 @@ export async function getPendingReviewCounts(): Promise<GetPendingReviewCountsRe
     .in("organization_id", safeOrgIds);
 
   if (coursesError) {
-    console.error("[getPendingReviewCounts] courses", coursesError.message);
+    console.error(
+      "[getPendingReviewCounts] courses",
+      coursesError.message ?? "unknown error",
+    );
     return { success: false, error: "Не удалось загрузить сдачи на проверку." };
   }
 
@@ -120,7 +127,10 @@ export async function getPendingReviewCounts(): Promise<GetPendingReviewCountsRe
     .in("lessons.modules.courses.organization_id", safeOrgIds);
 
   if (blocksError) {
-    console.error("[getPendingReviewCounts] blocks", blocksError.message);
+    console.error(
+      "[getPendingReviewCounts] blocks",
+      blocksError.message ?? "unknown error",
+    );
     return { success: false, error: "Не удалось загрузить сдачи на проверку." };
   }
 
@@ -167,7 +177,10 @@ export async function getPendingReviewCounts(): Promise<GetPendingReviewCountsRe
     .in("lesson_block_id", sliceIdsForInFilter(journalBlockIds));
 
   if (submissionsError) {
-    console.error("[getPendingReviewCounts] submissions", submissionsError.message);
+    console.error(
+      "[getPendingReviewCounts] submissions",
+      submissionsError.message ?? "unknown error",
+    );
     return { success: false, error: "Не удалось загрузить сдачи на проверку." };
   }
 
@@ -182,22 +195,28 @@ export async function getPendingReviewCounts(): Promise<GetPendingReviewCountsRe
     .not("cohort_id", "is", null);
 
   if (enrollmentsError) {
-    console.error("[getPendingReviewCounts] enrollments", enrollmentsError.message);
+    console.error(
+      "[getPendingReviewCounts] enrollments",
+      enrollmentsError.message ?? "unknown error",
+    );
     return { success: false, error: "Не удалось загрузить сдачи на проверку." };
   }
 
   const cohortByStudentCourse = new Map<string, string>();
   for (const enrollment of enrollments ?? []) {
-    if (enrollment.cohort_id) {
+    const cohortId = enrollment.cohort_id;
+    const studentId = enrollment.user_id;
+    const enrolledCourseId = enrollment.course_id;
+    if (cohortId && studentId && enrolledCourseId) {
       cohortByStudentCourse.set(
-        `${enrollment.user_id}:${enrollment.course_id}`,
-        enrollment.cohort_id,
+        `${studentId}:${enrolledCourseId}`,
+        cohortId,
       );
     }
   }
 
   const counts: Record<string, number> = {};
-  for (const submission of submissions) {
+  for (const submission of submissions ?? []) {
     const courseId = blockToCourseId.get(submission.lesson_block_id);
     if (!courseId) {
       continue;

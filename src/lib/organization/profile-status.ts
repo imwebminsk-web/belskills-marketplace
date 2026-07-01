@@ -9,6 +9,7 @@ export const SHOWCASE_STATUSES = [
   "published",
   "hidden",
   "blocked",
+  "rejected",
 ] as const satisfies readonly OrganizationShowcaseStatus[];
 
 export function isProfilePubliclyVisible(

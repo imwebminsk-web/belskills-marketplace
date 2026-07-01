@@ -1,12 +1,16 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { ImagePlusIcon, Loader2Icon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
+import type { TaxonomyRow } from "@/app/actions/taxonomy-actions";
 import {
+  createCourse,
   updateCourse,
   uploadCourseGalleryImage,
+  type CreateCourseState,
   type UpdateCourseState,
 } from "@/app/actions/course-actions";
 import {
@@ -16,7 +20,6 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -31,15 +34,17 @@ import {
 import { Editor } from "@/components/ui/editor";
 import { Textarea } from "@/components/ui/textarea";
 import { compressImage } from "@/lib/utils/image-compression";
-import type { Database } from "@/types/database.types";
+import { cn } from "@/lib/utils";
 import {
-  AGE_GROUP_LABELS,
-  COURSE_LANGUAGE_LABELS,
-  DELIVERY_FORMAT_LABELS,
+  AUDIENCE_CODE_TO_LABEL,
+  AUDIENCE_LABEL_TO_CODE,
+  DELIVERY_FORMAT_CODES,
+  DELIVERY_LABEL_TO_CODE,
+  type DeliveryFormatLabel,
 } from "@/lib/validations/course-settings-schema";
+import type { Database } from "@/types/database.types";
 
 import { CourseImageUpload } from "./course-image-upload";
-import { CourseVideoUpload } from "./course-video-upload";
 
 export type CourseSettingsFormCourse = Pick<
   Database["public"]["Tables"]["courses"]["Row"],
@@ -50,40 +55,116 @@ export type CourseSettingsFormCourse = Pick<
   | "price"
   | "status"
   | "image_url"
-  | "video_url"
   | "youtube_url"
   | "vimeo_url"
-  | "category"
   | "detailed_description"
   | "promotional_images"
   | "marketing_audience"
-  | "age_group"
   | "duration_value"
   | "duration_unit"
   | "start_date"
   | "has_certificate"
-  | "level"
   | "delivery_format"
-  | "language"
->;
+> & {
+  category_id?: string | null;
+  subcategory_id?: string | null;
+  marketing_tag_id?: string | null;
+  has_demo?: boolean;
+  is_belskills_partner?: boolean;
+};
 
-type CourseLevel = Database["public"]["Enums"]["course_level"];
+const EMPTY_COURSE_SETTINGS: CourseSettingsFormCourse = {
+  id: "",
+  slug: "",
+  title: "",
+  description: "",
+  detailed_description: "",
+  price: 0,
+  status: "draft",
+  image_url: null,
+  youtube_url: null,
+  vimeo_url: null,
+  category_id: null,
+  subcategory_id: null,
+  marketing_tag_id: null,
+  has_demo: false,
+  is_belskills_partner: false,
+  marketing_audience: null,
+  duration_value: null,
+  duration_unit: null,
+  start_date: null,
+  has_certificate: false,
+  delivery_format: null,
+  promotional_images: [],
+};
 
-const initialState: UpdateCourseState = {};
+const initialState: CreateCourseState & UpdateCourseState = {};
 
-/** Легаси-коды (kids/…) → русские метки после миграции. */
-function normalizeMarketingAudience(raw: string | null | undefined): string {
+const DELIVERY_CODE_TO_LABEL: Record<
+  (typeof DELIVERY_FORMAT_CODES)[number],
+  string
+> = {
+  online: "Онлайн",
+  offline: "Офлайн",
+  hybrid: "Гибрид",
+};
+
+/** Легаси-метки и коды → kids | adults для формы. */
+function normalizeMarketingAudienceCode(
+  raw: string | null | undefined,
+): string {
   if (raw == null || !String(raw).trim()) return "";
   const v = String(raw).trim();
-  const legacy: Record<string, string> = {
-    kids: "Дети",
-    adults: "Взрослые",
-    all: "Все",
-    teens: "",
-  };
-  if (v in legacy) return legacy[v] ?? "";
-  if (v === "Дети" || v === "Взрослые" || v === "Все") return v;
+  if (v === "kids" || v === "adults") return v;
+  return AUDIENCE_LABEL_TO_CODE[v] ?? "";
+}
+
+function normalizeDeliveryFormatCode(raw: string | null | undefined): string {
+  if (raw == null || !String(raw).trim()) return "";
+  const v = String(raw).trim();
+  if ((DELIVERY_FORMAT_CODES as readonly string[]).includes(v)) return v;
+  if (v in DELIVERY_LABEL_TO_CODE) {
+    return DELIVERY_LABEL_TO_CODE[v as DeliveryFormatLabel];
+  }
   return "";
+}
+
+function CourseFormField({
+  name,
+  label,
+  htmlFor,
+  children,
+  hint,
+  error,
+}: {
+  name: string;
+  label: string;
+  htmlFor?: string;
+  children: ReactNode;
+  hint?: ReactNode;
+  error?: string;
+}) {
+  return (
+    <div className="grid gap-2" data-field={name}>
+      <Label htmlFor={htmlFor}>{label}</Label>
+      {children}
+      {error ? (
+        <p className="text-destructive text-sm" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {hint}
+    </div>
+  );
+}
+
+function isRootCategoryRow(t: TaxonomyRow): boolean {
+  const type = typeof t.type === "string" ? t.type.trim() : "";
+  const parentId = t.parent_id;
+  return (
+    type === "category" &&
+    (parentId === null || parentId === undefined || parentId === "")
+  );
 }
 
 function dateInputValue(iso: string | null): string {
@@ -92,40 +173,111 @@ function dateInputValue(iso: string | null): string {
 }
 
 export function CourseSettingsForm({
+  mode,
   course,
+  taxonomies = [],
+  organizationId,
+  isPremium = false,
 }: {
-  course: CourseSettingsFormCourse;
+  mode: "create" | "edit";
+  course?: CourseSettingsFormCourse;
+  taxonomies?: TaxonomyRow[];
+  organizationId?: string;
+  isPremium?: boolean;
 }) {
-  const [status, setStatus] = useState(course.status);
-  const [level, setLevel] = useState<CourseLevel | "">(
-    (course.level ?? "") as CourseLevel | "",
+  const currentCourse = course ?? EMPTY_COURSE_SETTINGS;
+  const isCreate = mode === "create";
+
+  const rootCategories = (taxonomies || []).filter(isRootCategoryRow);
+
+  const marketingTags = useMemo(
+    () => taxonomies.filter((t) => t.type === "marketing_tag"),
+    [taxonomies],
   );
+
+  const [title, setTitle] = useState(currentCourse.title);
+  const [slug, setSlug] = useState(currentCourse.slug);
+  const [description, setDescription] = useState(currentCourse.description ?? "");
+  const [price, setPrice] = useState(String(currentCourse.price ?? 0));
   const [marketingAudience, setMarketingAudience] = useState(() =>
-    normalizeMarketingAudience(course.marketing_audience),
+    normalizeMarketingAudienceCode(currentCourse.marketing_audience),
   );
-  const [ageGroup, setAgeGroup] = useState(course.age_group ?? "");
   const [deliveryFormat, setDeliveryFormat] = useState(
-    course.delivery_format ?? "",
+    normalizeDeliveryFormatCode(currentCourse.delivery_format),
   );
-  const [language, setLanguage] = useState(course.language ?? "");
   const [durationUnit, setDurationUnit] = useState(
-    course.duration_unit ?? "",
+    currentCourse.duration_unit ?? "",
   );
-  const [hasCertificate, setHasCertificate] = useState(course.has_certificate);
+  const [durationValue, setDurationValue] = useState(
+    currentCourse.duration_value != null
+      ? String(currentCourse.duration_value)
+      : "",
+  );
+  const [startDate, setStartDate] = useState(
+    dateInputValue(currentCourse.start_date),
+  );
+  const [youtubeUrl, setYoutubeUrl] = useState(currentCourse.youtube_url ?? "");
+  const [vimeoUrl, setVimeoUrl] = useState(currentCourse.vimeo_url ?? "");
+  const [hasCertificate, setHasCertificate] = useState(
+    currentCourse.has_certificate,
+  );
+  const [selectedCategoryId, setSelectedCategoryId] = useState(
+    currentCourse.category_id ?? "",
+  );
+  const [subcategoryId, setSubcategoryId] = useState(
+    currentCourse.subcategory_id ?? "",
+  );
+  const [marketingTagId, setMarketingTagId] = useState(
+    currentCourse.marketing_tag_id ?? "",
+  );
+  const [hasDemo, setHasDemo] = useState(currentCourse.has_demo ?? false);
+  const [isBelskillsPartner, setIsBelskillsPartner] = useState(
+    currentCourse.is_belskills_partner ?? false,
+  );
   const [detailedDescriptionHtml, setDetailedDescriptionHtml] = useState(
-    course.detailed_description ?? "",
+    currentCourse.detailed_description ?? "",
   );
   const [promotionalImages, setPromotionalImages] = useState<string[]>(() =>
-    [...(course.promotional_images ?? [])].filter(
+    [...(currentCourse.promotional_images ?? [])].filter(
       (u) => typeof u === "string" && u.trim().length > 0,
     ),
   );
+
+  const subcategories = useMemo(
+    () =>
+      taxonomies.filter(
+        (t) =>
+          t.type === "category" && t.parent_id === selectedCategoryId,
+      ),
+    [taxonomies, selectedCategoryId],
+  );
+
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const [galleryBusy, setGalleryBusy] = useState(false);
-  const [state, formAction, isPending] = useActionState(
-    updateCourse,
+  const formAction = isCreate ? createCourse : updateCourse;
+  const [state, boundFormAction, isPending] = useActionState(
+    formAction,
     initialState,
   );
+
+  useEffect(() => {
+    function clearRadixScrollLock() {
+      for (const el of [document.body, document.documentElement]) {
+        el.style.pointerEvents = "";
+        el.style.overflow = "";
+        el.style.paddingRight = "";
+        el.removeAttribute("data-scroll-locked");
+      }
+    }
+    clearRadixScrollLock();
+    const t1 = window.setTimeout(clearRadixScrollLock, 0);
+    const t2 = window.setTimeout(clearRadixScrollLock, 100);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      clearRadixScrollLock();
+    };
+  }, []);
 
   async function onGalleryFilesChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -150,7 +302,7 @@ export function CourseSettingsForm({
           }
           const fd = new FormData();
           fd.append("file", compressed);
-          const res = await uploadCourseGalleryImage(course.id, fd);
+          const res = await uploadCourseGalleryImage(currentCourse.id, fd);
           if ("error" in res) {
             toast.error(res.error);
             continue;
@@ -170,50 +322,87 @@ export function CourseSettingsForm({
   }
 
   useEffect(() => {
-    setStatus(course.status);
-    setLevel((course.level ?? "") as CourseLevel | "");
-    setMarketingAudience(normalizeMarketingAudience(course.marketing_audience));
-    setAgeGroup(course.age_group ?? "");
-    setDeliveryFormat(course.delivery_format ?? "");
-    setLanguage(course.language ?? "");
-    setDurationUnit(course.duration_unit ?? "");
-    setHasCertificate(course.has_certificate);
-    setDetailedDescriptionHtml(course.detailed_description ?? "");
+    setTitle(currentCourse.title);
+    setSlug(currentCourse.slug);
+    setDescription(currentCourse.description ?? "");
+    setPrice(String(currentCourse.price ?? 0));
+    setMarketingAudience(
+      normalizeMarketingAudienceCode(currentCourse.marketing_audience),
+    );
+    setDeliveryFormat(
+      normalizeDeliveryFormatCode(currentCourse.delivery_format),
+    );
+    setDurationUnit(currentCourse.duration_unit ?? "");
+    setDurationValue(
+      currentCourse.duration_value != null
+        ? String(currentCourse.duration_value)
+        : "",
+    );
+    setStartDate(dateInputValue(currentCourse.start_date));
+    setYoutubeUrl(currentCourse.youtube_url ?? "");
+    setVimeoUrl(currentCourse.vimeo_url ?? "");
+    setHasCertificate(currentCourse.has_certificate);
+    setSelectedCategoryId(currentCourse.category_id ?? "");
+    setSubcategoryId(currentCourse.subcategory_id ?? "");
+    setMarketingTagId(currentCourse.marketing_tag_id ?? "");
+    setHasDemo(currentCourse.has_demo ?? false);
+    setIsBelskillsPartner(currentCourse.is_belskills_partner ?? false);
+    setDetailedDescriptionHtml(currentCourse.detailed_description ?? "");
     setPromotionalImages(
-      [...(course.promotional_images ?? [])].filter(
+      [...(currentCourse.promotional_images ?? [])].filter(
         (u) => typeof u === "string" && u.trim().length > 0,
       ),
     );
-  }, [
-    course.id,
-    course.status,
-    course.level,
-    course.marketing_audience,
-    course.age_group,
-    course.delivery_format,
-    course.language,
-    course.duration_unit,
-    course.has_certificate,
-    course.image_url,
-    course.video_url,
-    course.detailed_description,
-    course.promotional_images,
-  ]);
+  }, [currentCourse.id]);
+
+  const fieldErrors = state.fieldErrors ?? {};
+  const fieldErrorClass = (name: string) =>
+    fieldErrors[name] ? "border-destructive focus-visible:ring-destructive/30" : "";
+
+  const accordionDefaults = isCreate
+    ? ["basic", "landing", "audience", "catalog", "schedule"]
+    : ["basic", "media", "landing", "audience", "catalog", "schedule"];
 
   return (
-    <Form action={formAction} className="space-y-8">
-      <input type="hidden" name="id" value={course.id} />
-      <input type="hidden" name="status" value={status} />
-      <input type="hidden" name="marketing_audience" value={marketingAudience} />
-      {marketingAudience === "Взрослые" && level !== "" ? (
-        <input type="hidden" name="level" value={level} />
+    <Form action={boundFormAction} className="space-y-8">
+      {!isCreate ? (
+        <input type="hidden" name="id" value={currentCourse.id} />
       ) : null}
-      {marketingAudience === "Дети" && ageGroup !== "" ? (
-        <input type="hidden" name="age_group" value={ageGroup} />
+      {isCreate && organizationId ? (
+        <input type="hidden" name="organizationId" value={organizationId} />
       ) : null}
-      <input type="hidden" name="duration_unit" value={durationUnit} />
-      <input type="hidden" name="delivery_format" value={deliveryFormat} />
-      <input type="hidden" name="language" value={language} />
+      <input
+        type="hidden"
+        name="marketing_audience"
+        value={marketingAudience || ""}
+      />
+      <input
+        type="hidden"
+        name="category_id"
+        value={selectedCategoryId || ""}
+      />
+      <input
+        type="hidden"
+        name="subcategory_id"
+        value={subcategoryId || ""}
+      />
+      <input
+        type="hidden"
+        name="marketing_tag_id"
+        value={marketingTagId || ""}
+      />
+      <input type="hidden" name="has_demo" value={hasDemo ? "true" : "false"} />
+      <input
+        type="hidden"
+        name="is_belskills_partner"
+        value={isBelskillsPartner ? "true" : "false"}
+      />
+      <input type="hidden" name="duration_unit" value={durationUnit || ""} />
+      <input
+        type="hidden"
+        name="delivery_format"
+        value={deliveryFormat || ""}
+      />
       <input
         type="hidden"
         name="has_certificate"
@@ -245,32 +434,53 @@ export function CourseSettingsForm({
               name="title"
               required
               maxLength={200}
-              defaultValue={course.title}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className={fieldErrorClass("title")}
               disabled={isPending}
             />
+            {fieldErrors.title ? (
+              <p className="text-destructive text-sm" role="alert">
+                {fieldErrors.title}
+              </p>
+            ) : null}
           </div>
           <div className="space-y-2">
             <Label htmlFor="slug">URL курса (slug)</Label>
             <Input
               id="slug"
               name="slug"
-              required
+              required={!isCreate}
               maxLength={120}
-              defaultValue={course.slug}
+              value={slug}
+              onChange={(e) => setSlug(e.target.value)}
+              className={fieldErrorClass("slug")}
               disabled={isPending}
               placeholder="english-for-beginners"
             />
-            <p className="text-xs text-destructive">
-              Внимание: изменение URL сделает старые ссылки на курс
-              недействительными.
-            </p>
+            {fieldErrors.slug ? (
+              <p className="text-destructive text-sm" role="alert">
+                {fieldErrors.slug}
+              </p>
+            ) : null}
+            {isCreate ? (
+              <p className="text-muted-foreground text-xs">
+                Можно оставить пустым — адрес сгенерируется автоматически из
+                названия.
+              </p>
+            ) : (
+              <p className="text-xs text-destructive">
+                Внимание: изменение URL сделает старые ссылки на курс
+                недействительными.
+              </p>
+            )}
           </div>
         </div>
       </div>
 
       <Accordion
         type="multiple"
-        defaultValue={["basic", "media", "landing", "audience", "catalog", "schedule"]}
+        defaultValue={accordionDefaults}
         className="w-full"
       >
         <AccordionItem value="basic">
@@ -286,17 +496,72 @@ export function CourseSettingsForm({
                 </p>
               </div>
               <div className="grid gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="course-edit-category">Категория</Label>
-                  <Input
-                    id="course-edit-category"
-                    name="category"
-                    maxLength={120}
-                    placeholder="Например, Английский язык"
-                    defaultValue={course.category ?? ""}
+                <CourseFormField
+                  name="category_id"
+                  label="Категория"
+                  htmlFor="course-edit-category"
+                  error={fieldErrors.category_id}
+                >
+                  <Select
+                    value={selectedCategoryId || undefined}
+                    onValueChange={(val) => {
+                      setSelectedCategoryId(val);
+                      setSubcategoryId("");
+                    }}
                     disabled={isPending}
-                  />
-                </div>
+                  >
+                    <SelectTrigger
+                      id="course-edit-category"
+                      className={cn("w-full", fieldErrorClass("category_id"))}
+                    >
+                      <SelectValue placeholder="Выберите категорию" />
+                    </SelectTrigger>
+                    <SelectContent position="popper" className="z-[200]">
+                      {rootCategories.length === 0 ? (
+                        <SelectItem value="__empty" disabled>
+                          Нет доступных вариантов
+                        </SelectItem>
+                      ) : (
+                        rootCategories.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>
+                            {t.label}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </CourseFormField>
+                <CourseFormField
+                  name="subcategory_id"
+                  label="Подкатегория"
+                  htmlFor="course-edit-subcategory"
+                >
+                  <Select
+                    value={subcategoryId || undefined}
+                    onValueChange={(val) => setSubcategoryId(val)}
+                    disabled={isPending || !selectedCategoryId}
+                  >
+                    <SelectTrigger
+                      id="course-edit-subcategory"
+                      className="w-full"
+                    >
+                      <SelectValue placeholder="Не выбрано" />
+                    </SelectTrigger>
+                    <SelectContent position="popper" className="z-[200]">
+                      {subcategories.length === 0 ? (
+                        <SelectItem value="__empty" disabled>
+                          Нет доступных вариантов
+                        </SelectItem>
+                      ) : (
+                        subcategories.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>
+                            {t.label}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </CourseFormField>
                 <div className="grid gap-2">
                   <Label htmlFor="course-edit-description">
                     Краткое описание
@@ -305,10 +570,17 @@ export function CourseSettingsForm({
                     id="course-edit-description"
                     name="description"
                     rows={4}
-                    defaultValue={course.description ?? ""}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className={fieldErrorClass("description")}
                     placeholder="Кратко о содержании курса"
                     disabled={isPending}
                   />
+                  {fieldErrors.description ? (
+                    <p className="text-destructive text-sm" role="alert">
+                      {fieldErrors.description}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="course-edit-price">Цена</Label>
@@ -319,85 +591,82 @@ export function CourseSettingsForm({
                     min={0}
                     step="0.01"
                     required
-                    defaultValue={Number(course.price)}
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    className={fieldErrorClass("price")}
                     disabled={isPending}
                   />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="course-edit-status">Статус</Label>
-                  <Select
-                    value={status}
-                    onValueChange={(v) =>
-                      setStatus(v as CourseSettingsFormCourse["status"])
-                    }
-                    disabled={isPending}
-                  >
-                    <SelectTrigger id="course-edit-status" className="w-full">
-                      <SelectValue placeholder="Статус" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="draft">Черновик</SelectItem>
-                      <SelectItem value="published">Опубликован</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {fieldErrors.price ? (
+                    <p className="text-destructive text-sm" role="alert">
+                      {fieldErrors.price}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>
           </AccordionContent>
         </AccordionItem>
 
-        <AccordionItem value="media">
-          <AccordionTrigger className="text-base font-medium">
-            Медиа
-          </AccordionTrigger>
-          <AccordionContent className="pt-2">
-            <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-6">
-              <div className="space-y-1">
-                <h3 className="text-base font-semibold">Медиа и внешние ссылки</h3>
-                <p className="text-muted-foreground text-sm">
-                  Обложка, видео и ссылки на внешние площадки.
-                </p>
-              </div>
-              <CourseImageUpload
-                courseId={course.id}
-                initialImageUrl={course.image_url}
-              />
-              <CourseVideoUpload
-                courseId={course.id}
-                initialVideoUrl={course.video_url}
-              />
-              <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-4">
+        {!isCreate ? (
+          <AccordionItem value="media">
+            <AccordionTrigger className="text-base font-medium">
+              Медиа
+            </AccordionTrigger>
+            <AccordionContent className="pt-2">
+              <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-6">
                 <div className="space-y-1">
-                  <h4 className="text-base font-semibold">Внешние площадки</h4>
+                  <h3 className="text-base font-semibold">
+                    Медиа и внешние ссылки
+                  </h3>
+                  <p className="text-muted-foreground text-sm">
+                    Обложка и ссылки на внешние площадки.
+                  </p>
                 </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label htmlFor="course-youtube">Ссылка YouTube</Label>
-                  <Input
-                    id="course-youtube"
-                    name="youtube_url"
-                    type="url"
-                    placeholder="https://www.youtube.com/…"
-                    defaultValue={course.youtube_url ?? ""}
-                    disabled={isPending}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="course-vimeo">Ссылка Vimeo</Label>
-                  <Input
-                    id="course-vimeo"
-                    name="vimeo_url"
-                    type="url"
-                    placeholder="https://vimeo.com/…"
-                    defaultValue={course.vimeo_url ?? ""}
-                    disabled={isPending}
-                  />
-                </div>
+                <CourseImageUpload
+                  courseId={currentCourse.id}
+                  initialImageUrl={currentCourse.image_url}
+                />
+                <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-4">
+                  <div className="space-y-1">
+                    <h4 className="text-base font-semibold">Внешние площадки</h4>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-2">
+                      <Label htmlFor="course-youtube">Ссылка YouTube</Label>
+                      <Input
+                        id="course-youtube"
+                        name="youtube_url"
+                        type="url"
+                        placeholder="https://www.youtube.com/…"
+                        value={youtubeUrl}
+                        onChange={(e) => setYoutubeUrl(e.target.value)}
+                        className={fieldErrorClass("youtube_url")}
+                        disabled={isPending}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="course-vimeo">Ссылка Vimeo</Label>
+                      <Input
+                        id="course-vimeo"
+                        name="vimeo_url"
+                        type="url"
+                        placeholder="https://vimeo.com/…"
+                        value={vimeoUrl}
+                        onChange={(e) => setVimeoUrl(e.target.value)}
+                        className={fieldErrorClass("vimeo_url")}
+                        disabled={isPending}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </AccordionContent>
-        </AccordionItem>
+            </AccordionContent>
+          </AccordionItem>
+        ) : (
+          <p className="text-muted-foreground text-sm">
+            Загрузка медиафайлов будет доступна после создания курса.
+          </p>
+        )}
 
         <AccordionItem value="landing">
           <AccordionTrigger className="text-base font-medium">
@@ -430,170 +699,129 @@ export function CourseSettingsForm({
                 </div>
               </div>
 
-              <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-4">
-                <div className="space-y-1">
-                  <h4 className="text-base font-semibold">Галерея лендинга</h4>
-                </div>
-                <p className="text-muted-foreground text-xs">
-                  До 24 изображений. Перед загрузкой файлы сжимаются в браузере
-                  (цель до 100 КБ каждый), затем попадают в Storage. Сохраните
-                  форму курса, чтобы записать список URL в базу.
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <input
-                    ref={galleryInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    multiple
-                    className="sr-only"
-                    tabIndex={-1}
-                    disabled={isPending || galleryBusy}
-                    onChange={(ev) => void onGalleryFilesChange(ev)}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={isPending || galleryBusy || promotionalImages.length >= 24}
-                    onClick={() => galleryInputRef.current?.click()}
-                  >
-                    {galleryBusy ? (
-                      <Loader2Icon className="mr-2 size-4 animate-spin" aria-hidden />
-                    ) : (
-                      <ImagePlusIcon className="mr-2 size-4" aria-hidden />
-                    )}
-                    Добавить изображения
-                  </Button>
-                  <span className="text-muted-foreground text-xs">
-                    {promotionalImages.length} / 24
-                  </span>
-                </div>
-                {promotionalImages.length > 0 ? (
-                  <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                    {promotionalImages.map((url) => (
-                      <li
-                        key={url}
-                        className="border-border group relative aspect-square overflow-hidden rounded-lg border bg-muted/30"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={url}
-                          alt=""
-                          className="size-full object-cover"
-                        />
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="icon-xs"
-                          className="absolute right-1 top-1 size-7 opacity-90 shadow-sm"
-                          disabled={isPending || galleryBusy}
-                          aria-label="Убрать из галереи"
-                          onClick={() =>
-                            setPromotionalImages((prev) =>
-                              prev.filter((u) => u !== url),
-                            )
-                          }
-                        >
-                          <XIcon className="size-3.5" />
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-muted-foreground border-border rounded-lg border border-dashed px-4 py-6 text-center text-sm">
-                    Пока нет изображений — добавьте через кнопку выше.
+              {!isCreate ? (
+                <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-4">
+                  <div className="space-y-1">
+                    <h4 className="text-base font-semibold">Галерея лендинга</h4>
+                  </div>
+                  <p className="text-muted-foreground text-xs">
+                    До 24 изображений. Перед загрузкой файлы сжимаются в браузере
+                    (цель до 100 КБ каждый), затем попадают в Storage. Сохраните
+                    форму курса, чтобы записать список URL в базу.
                   </p>
-                )}
-              </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      ref={galleryInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      multiple
+                      className="sr-only"
+                      tabIndex={-1}
+                      disabled={isPending || galleryBusy}
+                      onChange={(ev) => void onGalleryFilesChange(ev)}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={
+                        isPending || galleryBusy || promotionalImages.length >= 24
+                      }
+                      onClick={() => galleryInputRef.current?.click()}
+                    >
+                      {galleryBusy ? (
+                        <Loader2Icon
+                          className="mr-2 size-4 animate-spin"
+                          aria-hidden
+                        />
+                      ) : (
+                        <ImagePlusIcon className="mr-2 size-4" aria-hidden />
+                      )}
+                      Добавить изображения
+                    </Button>
+                    <span className="text-muted-foreground text-xs">
+                      {promotionalImages.length} / 24
+                    </span>
+                  </div>
+                  {promotionalImages.length > 0 ? (
+                    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                      {promotionalImages.map((url) => (
+                        <li
+                          key={url}
+                          className="border-border group relative aspect-square overflow-hidden rounded-lg border bg-muted/30"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={url}
+                            alt=""
+                            className="size-full object-cover"
+                          />
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="icon-xs"
+                            className="absolute right-1 top-1 size-7 opacity-90 shadow-sm"
+                            disabled={isPending || galleryBusy}
+                            aria-label="Убрать из галереи"
+                            onClick={() =>
+                              setPromotionalImages((prev) =>
+                                prev.filter((u) => u !== url),
+                              )
+                            }
+                          >
+                            <XIcon className="size-3.5" />
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-muted-foreground border-border rounded-lg border border-dashed px-4 py-6 text-center text-sm">
+                      Пока нет изображений — добавьте через кнопку выше.
+                    </p>
+                  )}
+                </div>
+              ) : null}
             </div>
           </AccordionContent>
         </AccordionItem>
 
         <AccordionItem value="audience">
           <AccordionTrigger className="text-base font-medium">
-            Целевая аудитория и уровень
+            Целевая аудитория
           </AccordionTrigger>
           <AccordionContent>
             <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-4">
               <div className="space-y-1">
-                <h3 className="text-base font-semibold">Целевая аудитория и уровень</h3>
+                <h3 className="text-base font-semibold">Целевая аудитория</h3>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label htmlFor="course-audience">Аудитория (лендинг)</Label>
+                <CourseFormField
+                  name="marketing_audience"
+                  label="Аудитория (лендинг)"
+                  htmlFor="course-audience"
+                  error={fieldErrors.marketing_audience}
+                >
                   <Select
-                    value={marketingAudience || "__empty__"}
-                    onValueChange={(v) => {
-                      const next = v === "__empty__" ? "" : v;
-                      setMarketingAudience(next);
-                      if (next !== "Дети") setAgeGroup("");
-                      if (next !== "Взрослые") setLevel("");
-                    }}
+                    value={marketingAudience || undefined}
+                    onValueChange={(val) => setMarketingAudience(val)}
                     disabled={isPending}
                   >
-                    <SelectTrigger id="course-audience" className="w-full">
+                    <SelectTrigger
+                      id="course-audience"
+                      className={cn("w-full", fieldErrorClass("marketing_audience"))}
+                    >
                       <SelectValue placeholder="Не выбрано" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__empty__">Не выбрано</SelectItem>
-                      <SelectItem value="Дети">Дети</SelectItem>
-                      <SelectItem value="Взрослые">Взрослые</SelectItem>
-                      <SelectItem value="Все">Все</SelectItem>
+                    <SelectContent position="popper" className="z-[200]">
+                      <SelectItem value="kids">
+                        {AUDIENCE_CODE_TO_LABEL.kids}
+                      </SelectItem>
+                      <SelectItem value="adults">
+                        {AUDIENCE_CODE_TO_LABEL.adults}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-                {marketingAudience === "Взрослые" ? (
-                  <div className="grid gap-2">
-                    <Label htmlFor="course-level">Уровень CEFR</Label>
-                    <Select
-                      value={level || "__empty__"}
-                      onValueChange={(v) =>
-                        setLevel(v === "__empty__" ? "" : (v as CourseLevel))
-                      }
-                      disabled={isPending}
-                    >
-                      <SelectTrigger id="course-level" className="w-full">
-                        <SelectValue placeholder="Выберите уровень" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__empty__">Не выбрано</SelectItem>
-                        <SelectItem value="0">0</SelectItem>
-                        <SelectItem value="A1">A1</SelectItem>
-                        <SelectItem value="A2">A2</SelectItem>
-                        <SelectItem value="B1">B1</SelectItem>
-                        <SelectItem value="B1+">B1+</SelectItem>
-                        <SelectItem value="B2">B2</SelectItem>
-                        <SelectItem value="B2+">B2+</SelectItem>
-                        <SelectItem value="C1">C1</SelectItem>
-                        <SelectItem value="C2">C2</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ) : null}
-                {marketingAudience === "Дети" ? (
-                  <div className="grid gap-2">
-                    <Label htmlFor="course-age-group">Возрастная группа</Label>
-                    <Select
-                      value={ageGroup || "__empty__"}
-                      onValueChange={(v) =>
-                        setAgeGroup(v === "__empty__" ? "" : v)
-                      }
-                      disabled={isPending}
-                    >
-                      <SelectTrigger id="course-age-group" className="w-full">
-                        <SelectValue placeholder="Выберите группу" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__empty__">Не выбрано</SelectItem>
-                        {AGE_GROUP_LABELS.map((label) => (
-                          <SelectItem key={label} value={label}>
-                            {label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ) : null}
+                </CourseFormField>
               </div>
             </div>
           </AccordionContent>
@@ -609,51 +837,94 @@ export function CourseSettingsForm({
                 <h3 className="text-base font-semibold">Витрина и каталог</h3>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label htmlFor="course-delivery-format">Формат проведения</Label>
+                <CourseFormField
+                  name="delivery_format"
+                  label="Формат проведения"
+                  htmlFor="course-delivery-format"
+                  error={fieldErrors.delivery_format}
+                >
                   <Select
-                    value={deliveryFormat || "__empty__"}
-                    onValueChange={(v) =>
-                      setDeliveryFormat(v === "__empty__" ? "" : v)
-                    }
+                    value={deliveryFormat || undefined}
+                    onValueChange={(val) => setDeliveryFormat(val)}
                     disabled={isPending}
                   >
-                    <SelectTrigger id="course-delivery-format" className="w-full">
+                    <SelectTrigger
+                      id="course-delivery-format"
+                      className={cn("w-full", fieldErrorClass("delivery_format"))}
+                    >
                       <SelectValue placeholder="Не выбрано" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__empty__">Не выбрано</SelectItem>
-                      {DELIVERY_FORMAT_LABELS.map((label) => (
-                        <SelectItem key={label} value={label}>
-                          {label}
+                    <SelectContent position="popper" className="z-[200]">
+                      <SelectItem value="online">
+                        {DELIVERY_CODE_TO_LABEL.online}
+                      </SelectItem>
+                      <SelectItem value="offline">
+                        {DELIVERY_CODE_TO_LABEL.offline}
+                      </SelectItem>
+                      <SelectItem value="hybrid">
+                        {DELIVERY_CODE_TO_LABEL.hybrid}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </CourseFormField>
+                <CourseFormField
+                  name="marketing_tag_id"
+                  label="Маркетинговый тег"
+                  htmlFor="course-marketing-tag"
+                  hint={
+                    !isPremium ? (
+                      <p className="text-muted-foreground text-xs">
+                        Доступно на тарифе Premium
+                      </p>
+                    ) : null
+                  }
+                >
+                  <Select
+                    value={marketingTagId || undefined}
+                    onValueChange={(val) => setMarketingTagId(val)}
+                    disabled={isPending || !isPremium}
+                  >
+                    <SelectTrigger id="course-marketing-tag" className="w-full">
+                      <SelectValue placeholder="Не выбрано" />
+                    </SelectTrigger>
+                    <SelectContent position="popper" className="z-[200]">
+                      {marketingTags.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="course-catalog-language">Язык курса</Label>
-                  <Select
-                    value={language || "__empty__"}
-                    onValueChange={(v) =>
-                      setLanguage(v === "__empty__" ? "" : v)
-                    }
+                </CourseFormField>
+                <div className="flex items-center gap-2 md:col-span-2">
+                  <Checkbox
+                    id="course-has-demo"
+                    checked={hasDemo}
+                    onCheckedChange={(v) => setHasDemo(v === true)}
                     disabled={isPending}
+                  />
+                  <Label
+                    htmlFor="course-has-demo"
+                    className="cursor-pointer font-normal"
                   >
-                    <SelectTrigger id="course-catalog-language" className="w-full">
-                      <SelectValue placeholder="Не выбрано" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__empty__">Не выбрано</SelectItem>
-                      {COURSE_LANGUAGE_LABELS.map((label) => (
-                        <SelectItem key={label} value={label}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    Демо-урок
+                  </Label>
                 </div>
-                <p className="text-muted-foreground text-xs">
+                <div className="flex items-center gap-2 md:col-span-2">
+                  <Checkbox
+                    id="course-belskills-partner"
+                    checked={isBelskillsPartner}
+                    onCheckedChange={(v) => setIsBelskillsPartner(v === true)}
+                    disabled={isPending}
+                  />
+                  <Label
+                    htmlFor="course-belskills-partner"
+                    className="cursor-pointer font-normal"
+                  >
+                    BelSkills
+                  </Label>
+                </div>
+                <p className="text-muted-foreground text-xs md:col-span-2">
                   Эти поля используются на главной странице для фильтров каталога.
                 </p>
               </div>
@@ -681,11 +952,8 @@ export function CourseSettingsForm({
                       min={0}
                       step={1}
                       placeholder="Например, 8"
-                      defaultValue={
-                        course.duration_value != null
-                          ? String(course.duration_value)
-                          : ""
-                      }
+                      value={durationValue}
+                      onChange={(e) => setDurationValue(e.target.value)}
                       disabled={isPending}
                     />
                   </div>
@@ -704,7 +972,7 @@ export function CourseSettingsForm({
                       >
                         <SelectValue placeholder="Не выбрано" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent position="popper" className="z-[200]">
                         <SelectItem value="__empty__">Не выбрано</SelectItem>
                         <SelectItem value="hours">Часов</SelectItem>
                         <SelectItem value="weeks">Недель</SelectItem>
@@ -719,7 +987,8 @@ export function CourseSettingsForm({
                     id="course-start-date"
                     name="start_date"
                     type="date"
-                    defaultValue={dateInputValue(course.start_date)}
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
                     disabled={isPending}
                   />
                   <p className="text-muted-foreground text-xs">
@@ -733,7 +1002,10 @@ export function CourseSettingsForm({
                     onCheckedChange={(v) => setHasCertificate(v === true)}
                     disabled={isPending}
                   />
-                  <Label htmlFor="course-certificate" className="cursor-pointer font-normal">
+                  <Label
+                    htmlFor="course-certificate"
+                    className="cursor-pointer font-normal"
+                  >
                     Выдаётся сертификат
                   </Label>
                 </div>
@@ -748,15 +1020,21 @@ export function CourseSettingsForm({
           {state.error}
         </p>
       ) : null}
-      {state.success ? (
+      {!isCreate && state.success ? (
         <p className="text-muted-foreground text-sm" role="status">
-          Изменения сохранены.
+          {state.message ?? "Изменения сохранены."}
         </p>
       ) : null}
 
       <div>
         <Button type="submit" disabled={isPending}>
-          {isPending ? "Сохранение…" : "Сохранить изменения"}
+          {isPending
+            ? isCreate
+              ? "Создание…"
+              : "Сохранение…"
+            : isCreate
+              ? "Создать курс"
+              : "Сохранить изменения"}
         </Button>
       </div>
     </Form>

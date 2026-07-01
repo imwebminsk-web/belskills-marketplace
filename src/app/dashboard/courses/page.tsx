@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { CreateCourseDialog } from "@/components/dashboard/teacher/create-course-dialog";
 import { TeacherCourseCard } from "@/components/dashboard/teacher/TeacherCourseCard";
+import type { TeacherCourseCardModel } from "@/components/dashboard/teacher/TeacherCourseCard";
 import { SiteHeader } from "@/components/site-header";
+import { Button } from "@/components/ui/button";
 import {
   getStaffOrganizationIds,
   hasStaffAccess,
@@ -43,15 +45,7 @@ export default async function DashboardCoursesPage() {
     redirect("/dashboard");
   }
 
-  let list: {
-    id: string;
-    title: string;
-    description: string | null;
-    status: string;
-    price: number | null;
-    slug: string;
-    image_url: string | null;
-  }[] = [];
+  let list: TeacherCourseCardModel[] = [];
 
   if (profile.is_global_admin) {
     const { data: courses, error } = await supabase
@@ -61,12 +55,11 @@ export default async function DashboardCoursesPage() {
 
     if (error) {
       console.error("[DashboardCoursesPage]", error.message);
+    } else {
+      list = courses ?? [];
     }
-
-    list = courses ?? [];
   } else {
     const orgIds = getStaffOrganizationIds(tenants);
-
     if (orgIds.length > 0) {
       const { data: courses, error } = await supabase
         .from("courses")
@@ -76,12 +69,11 @@ export default async function DashboardCoursesPage() {
 
       if (error) {
         console.error("[DashboardCoursesPage]", error.message);
+      } else {
+        list = courses ?? [];
       }
-
-      list = courses ?? [];
     }
   }
-
   const displayName =
     profile.full_name?.trim() ||
     user.email?.split("@")[0] ||
@@ -100,7 +92,9 @@ export default async function DashboardCoursesPage() {
               </p>
             </div>
             <div className="w-full shrink-0 sm:w-auto">
-              <CreateCourseDialog />
+              <Button asChild>
+                <Link href="/dashboard/courses/new">Создать курс</Link>
+              </Button>
             </div>
           </div>
 

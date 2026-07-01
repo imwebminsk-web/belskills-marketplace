@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { AlertCircleIcon } from "lucide-react";
 
+import { getTaxonomies } from "@/app/actions/taxonomy-actions";
 import { CourseEditorTabs } from "@/components/dashboard/teacher/course-editor-tabs";
+import { CourseModerationHeader } from "@/components/dashboard/teacher/course-moderation-header";
 import type { CurriculumModuleRow } from "@/components/dashboard/teacher/curriculum-tab";
-import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { canManageCourse, hasStaffAccess } from "@/lib/auth/access";
+import { parseCourseStatus } from "@/lib/course/course-status";
 import { getUserTenantsSafe } from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
 
@@ -73,22 +77,23 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
       detailed_description,
       price,
       status,
+      rejection_reason,
       slug,
       image_url,
-      video_url,
       youtube_url,
       vimeo_url,
-      category,
+      category_id,
+      subcategory_id,
+      marketing_tag_id,
+      has_demo,
+      is_belskills_partner,
       has_certificate,
       marketing_audience,
-      age_group,
       delivery_format,
-      language,
       promotional_images,
       duration_value,
       duration_unit,
       start_date,
-      level,
       organization_id,
       modules (
         id,
@@ -138,6 +143,11 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
     );
   }
 
+  const taxonomiesRes = await getTaxonomies();
+
+  const courseStatus = parseCourseStatus(courseRow.status);
+  const rejectionReason = courseRow.rejection_reason?.trim() ?? null;
+
   const course = {
     id: courseRow.id,
     title: courseRow.title,
@@ -147,20 +157,20 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
     status: courseRow.status,
     slug: courseRow.slug,
     image_url: courseRow.image_url,
-    video_url: courseRow.video_url,
     youtube_url: courseRow.youtube_url,
     vimeo_url: courseRow.vimeo_url,
-    category: courseRow.category,
+    category_id: courseRow.category_id,
+    subcategory_id: courseRow.subcategory_id,
+    marketing_tag_id: courseRow.marketing_tag_id,
+    has_demo: courseRow.has_demo,
+    is_belskills_partner: courseRow.is_belskills_partner,
     has_certificate: courseRow.has_certificate,
     marketing_audience: courseRow.marketing_audience,
-    age_group: courseRow.age_group,
     promotional_images: courseRow.promotional_images ?? [],
     duration_value: courseRow.duration_value,
     duration_unit: courseRow.duration_unit,
     start_date: courseRow.start_date,
-    level: courseRow.level,
     delivery_format: courseRow.delivery_format,
-    language: courseRow.language,
   };
 
   const rawModules = courseRow.modules ?? [];
@@ -176,13 +186,22 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
         .sort((a, b) => a.order_index - b.order_index),
     }));
 
-  const isPublished = course.status === "published";
-
   return (
     <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-8">
       <Button variant="ghost" className="w-fit px-0" asChild>
         <Link href="/dashboard/courses">← Назад</Link>
       </Button>
+
+      {courseStatus === "rejected" ? (
+        <Alert variant="destructive">
+          <AlertCircleIcon />
+          <AlertTitle>Курс отклонён модератором</AlertTitle>
+          <AlertDescription>
+            {rejectionReason ||
+              "Исправьте замечания и отправьте курс на повторную проверку."}
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
@@ -193,24 +212,19 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
             /{course.slug}
           </p>
         </div>
-        {isPublished ? (
-          <Badge
-            variant="outline"
-            className="shrink-0 border-brand/40 bg-brand/10 text-brand"
-          >
-            Опубликован
-          </Badge>
-        ) : (
-          <Badge
-            variant="secondary"
-            className="shrink-0 border-amber-500/35 bg-amber-500/12 text-amber-950 dark:text-amber-100"
-          >
-            Черновик
-          </Badge>
-        )}
+        <CourseModerationHeader
+          courseId={course.id}
+          status={courseStatus}
+        />
       </header>
 
-      <CourseEditorTabs course={course} modules={modules} />
+      <CourseEditorTabs
+        course={course}
+        modules={modules}
+        taxonomies={
+          taxonomiesRes?.success && taxonomiesRes?.data ? taxonomiesRes.data : []
+        }
+      />
     </div>
   );
 }

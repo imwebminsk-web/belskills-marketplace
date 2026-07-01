@@ -11,6 +11,7 @@ import {
   dashboardTableRowSchema,
 } from "@/lib/dashboard-table-schema";
 import { formatCoursePriceDecimal } from "@/lib/format-course-price";
+import { courseStatusLabel, parseCourseStatus } from "@/lib/course/course-status";
 import { parseTestIdFromQuizBlockContent } from "@/lib/learn/quiz-block-test-id";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 import type { Database } from "@/types/database.types";
@@ -47,12 +48,6 @@ function uuidToStableNumber(id: string): number {
   return parseInt(hex, 16) % 2147483647;
 }
 
-function courseStatusLabel(
-  status: Database["public"]["Enums"]["course_status"],
-): "Опубликован" | "Черновик" {
-  return status === "published" ? "Опубликован" : "Черновик";
-}
-
 function mapCourseRow(
   row: {
     id: string;
@@ -71,7 +66,7 @@ function mapCourseRow(
     id: uuidToStableNumber(row.id),
     header: row.title,
     type: typeLabel,
-    status: courseStatusLabel(row.status),
+    status: courseStatusLabel(parseCourseStatus(row.status)),
     target: formatCoursePriceDecimal(row.price),
     limit: row.slug,
     slug: row.slug,
@@ -805,21 +800,26 @@ export async function fetchDashboardData(
       };
     }
 
+    const orgId = organizationId;
+
     const { data: courses, error } = await supabase
       .from("courses")
       .select("id")
-      .eq("organization_id", organizationId);
+      .eq("organization_id", orgId);
 
     if (error) {
-      console.error("[fetchDashboardData] teacher courses", error.message);
+      console.error(
+        "[fetchDashboardData] teacher courses",
+        error.message ?? "unknown error",
+      );
     }
 
     const courseIds = (courses ?? []).map((c) => c.id);
 
     const [teacherMetrics, pendingReviews, activityEvents] = await Promise.all([
-      fetchTeacherMetrics(supabase, courseIds, organizationId),
-      getPendingReviewsForTeacher(organizationId, 5),
-      getRecentActivity(organizationId, 15),
+      fetchTeacherMetrics(supabase, courseIds, orgId),
+      getPendingReviewsForTeacher(orgId, 5),
+      getRecentActivity(orgId, 15),
     ]);
 
     return {
@@ -845,7 +845,10 @@ export async function fetchDashboardData(
     ]);
 
     if (staffError) {
-      console.error("[fetchDashboardData] staff members", staffError.message);
+      console.error(
+        "[fetchDashboardData] staff members",
+        staffError.message ?? "unknown error",
+      );
     }
 
     const staffUserIds = new Set(
@@ -869,7 +872,10 @@ export async function fetchDashboardData(
       await studentsCountQuery;
 
     if (studentsError) {
-      console.error("[fetchDashboardData] student count", studentsError.message);
+      console.error(
+        "[fetchDashboardData] student count",
+        studentsError.message ?? "unknown error",
+      );
     }
 
     const adminMetrics: AdminDashboardMetrics = {
@@ -894,7 +900,10 @@ export async function fetchDashboardData(
     .limit(40);
 
   if (error) {
-    console.error("[fetchDashboardData] student catalog", error.message);
+    console.error(
+      "[fetchDashboardData] student catalog",
+      error.message ?? "unknown error",
+    );
   }
 
   const tableRows = (courses ?? []).map((c) => mapCourseRow(c));

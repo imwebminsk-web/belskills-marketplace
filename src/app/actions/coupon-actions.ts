@@ -393,7 +393,7 @@ export async function upsertCoupon(
 
 export async function deleteCoupon(
   couponId: string,
-): Promise<ActionOk | ActionError> {
+): Promise<{ success: true } | ActionError> {
   const auth = await requireAdmin();
   if (!auth.success) {
     return auth;

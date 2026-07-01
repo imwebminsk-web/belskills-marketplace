@@ -169,8 +169,8 @@ export function Editor({
     try {
       const compressed = await compressImage(file);
 
-      if (compressed.size > 100 * 1024) {
-        window.alert("Изображение после сжатия всё ещё больше 100 КБ.");
+      if (compressed.size > 1024 * 1024) {
+        window.alert("Изображение после сжатия всё ещё больше 1 МБ.");
         return;
       }
 
