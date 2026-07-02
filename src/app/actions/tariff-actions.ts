@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { isGlobalAdmin, loadGateProfile } from "@/lib/auth/access";
+import { LEGACY_TARIFF_IDS } from "@/lib/tariffs/format-tier-limits";
 import { rublesToKopecks } from "@/lib/utils/pricing";
 import { createClient } from "@/lib/supabase/server";
 import type { Database, Json } from "@/types/database.types";
@@ -19,8 +20,8 @@ const tariffIdSchema = z
   .min(1, "Укажите ID тарифа")
   .max(64, "ID слишком длинный")
   .regex(
-    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
-    "ID: латиница, цифры и дефис (например, pro-plus)",
+    /^[a-z0-9-_]+$/,
+    "ID: латиница, цифры, дефис и подчеркивание (например, corp_enterprise)",
   );
 
 const upsertTariffSchema = z.object({
@@ -223,4 +224,30 @@ export async function upsertTariff(
 
   revalidateTariffPaths();
   return { success: true, data };
+}
+
+export async function deleteLegacyTariffs(): Promise<
+  ActionOk<{ deletedIds: string[] }> | ActionError
+> {
+  const auth = await requireAdmin();
+  if ("error" in auth) {
+    return auth;
+  }
+
+  const { error } = await auth.supabase
+    .from("subscription_tiers")
+    .delete()
+    .in("id", [...LEGACY_TARIFF_IDS]);
+
+  if (error) {
+    console.error("[deleteLegacyTariffs]", error.message);
+    return {
+      success: false,
+      error:
+        "Не удалось удалить старые тарифы. Возможно, на них ещё ссылаются организации.",
+    };
+  }
+
+  revalidateTariffPaths();
+  return { success: true, data: { deletedIds: [...LEGACY_TARIFF_IDS] } };
 }

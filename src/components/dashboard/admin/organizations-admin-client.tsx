@@ -1,11 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import {
   Check,
+  Eye,
   EyeOff,
   MoreHorizontalIcon,
+  Pencil,
   X,
 } from "lucide-react";
 
@@ -274,6 +277,32 @@ export function OrganizationsAdminClient({
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                disabled={!row.slug}
+                                onClick={() => {
+                                  if (!row.slug) return;
+                                  window.open(
+                                    `/school/${encodeURIComponent(row.slug)}`,
+                                    "_blank",
+                                    "noopener,noreferrer",
+                                  );
+                                }}
+                              >
+                                <Eye className="size-4" />
+                                Предпросмотр
+                              </DropdownMenuItem>
+                              <DropdownMenuItem asChild>
+                                <Link
+                                  href={`/dashboard/admin/organizations/${row.organizationId}`}
+                                >
+                                  <Pencil className="size-4" />
+                                  Редактировать
+                                </Link>
+                              </DropdownMenuItem>
+                              {row.status === "moderation" ||
+                              row.status === "published" ? (
+                                <DropdownMenuSeparator />
+                              ) : null}
                               {row.status === "moderation" ? (
                                 <>
                                   <DropdownMenuItem
@@ -297,15 +326,6 @@ export function OrganizationsAdminClient({
                                   <EyeOff className="size-4" />
                                   Снять с публикации
                                 </DropdownMenuItem>
-                              ) : null}
-                              {row.status !== "moderation" &&
-                              row.status !== "published" ? (
-                                <>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem disabled>
-                                    Нет доступных действий
-                                  </DropdownMenuItem>
-                                </>
                               ) : null}
                             </DropdownMenuContent>
                           </DropdownMenu>

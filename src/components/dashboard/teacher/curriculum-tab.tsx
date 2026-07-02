@@ -33,6 +33,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { Database } from "@/types/database.types";
 
@@ -47,6 +53,7 @@ export type CurriculumModuleRow = Pick<
 > & { lessons: CurriculumLessonRow[] };
 
 const initialCurriculumState: CurriculumActionState = {};
+const FREE_STRUCTURE_ERROR = "На бесплатном тарифе создание структуры курса недоступно";
 
 function LessonKindIcon({
   testId,
@@ -62,7 +69,13 @@ function LessonKindIcon({
   return <FileTextIcon className={iconClass} aria-hidden />;
 }
 
-function AddModuleForm({ courseId }: { courseId: string }) {
+function AddModuleForm({
+  courseId,
+  canCreateStructure,
+}: {
+  courseId: string;
+  canCreateStructure: boolean;
+}) {
   const [state, formAction, isPending] = useActionState(
     createModule,
     initialCurriculumState,
@@ -91,12 +104,27 @@ function AddModuleForm({ courseId }: { courseId: string }) {
               placeholder="Например, Введение"
               required
               maxLength={200}
-              disabled={isPending}
+              disabled={isPending || !canCreateStructure}
             />
           </div>
-          <Button type="submit" disabled={isPending} className="shrink-0">
-            {isPending ? "Создание…" : "Добавить модуль"}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex shrink-0">
+                  <Button
+                    type="submit"
+                    disabled={isPending || !canCreateStructure}
+                    className="shrink-0"
+                  >
+                    {isPending ? "Создание…" : "Добавить модуль"}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {!canCreateStructure ? (
+                <TooltipContent>{FREE_STRUCTURE_ERROR}</TooltipContent>
+              ) : null}
+            </Tooltip>
+          </TooltipProvider>
         </Form>
         {state.error ? (
           <p className="text-destructive mt-2 text-sm" role="alert">
@@ -114,9 +142,11 @@ function AddModuleForm({ courseId }: { courseId: string }) {
 function AddLessonForm({
   courseId,
   moduleId,
+  canCreateStructure,
 }: {
   courseId: string;
   moduleId: string;
+  canCreateStructure: boolean;
 }) {
   const [state, formAction, isPending] = useActionState(
     createLesson,
@@ -146,12 +176,28 @@ function AddLessonForm({
             placeholder="Урок"
             required
             maxLength={200}
-            disabled={isPending}
+            disabled={isPending || !canCreateStructure}
           />
         </div>
-        <Button type="submit" size="sm" disabled={isPending} className="w-fit">
-          {isPending ? "Добавление…" : "Добавить урок"}
-        </Button>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex w-fit">
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={isPending || !canCreateStructure}
+                  className="w-fit"
+                >
+                  {isPending ? "Добавление…" : "Добавить урок"}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            {!canCreateStructure ? (
+              <TooltipContent>{FREE_STRUCTURE_ERROR}</TooltipContent>
+            ) : null}
+          </Tooltip>
+        </TooltipProvider>
         {state.error ? (
           <p className="text-destructive text-sm" role="alert">
             {state.error}
@@ -166,10 +212,12 @@ export function CurriculumTab({
   courseId,
   courseSlug,
   modules,
+  canCreateStructure,
 }: {
   courseId: string;
   courseSlug: string;
   modules: CurriculumModuleRow[];
+  canCreateStructure: boolean;
 }) {
   const router = useRouter();
   const lessonBasePath = `/dashboard/courses/${encodeURIComponent(courseSlug)}/lessons`;
@@ -433,14 +481,21 @@ export function CurriculumTab({
                     ))}
                   </ul>
                 )}
-                <AddLessonForm courseId={courseId} moduleId={module.id} />
+                <AddLessonForm
+                  courseId={courseId}
+                  moduleId={module.id}
+                  canCreateStructure={canCreateStructure}
+                />
               </AccordionContent>
             </AccordionItem>
           ))}
         </Accordion>
       )}
 
-      <AddModuleForm courseId={courseId} />
+      <AddModuleForm
+        courseId={courseId}
+        canCreateStructure={canCreateStructure}
+      />
     </div>
   );
 }

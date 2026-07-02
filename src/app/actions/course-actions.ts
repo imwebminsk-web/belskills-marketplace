@@ -588,7 +588,9 @@ async function requireCourseManager(courseId: string) {
 
   const { data: course, error: fetchError } = await supabase
     .from("courses")
-    .select("id, organization_id, slug, status, rejection_reason")
+    .select(
+      "id, organization_id, slug, status, rejection_reason, organizations(org_type)",
+    )
     .eq("id", courseId)
     .maybeSingle();
 
@@ -605,7 +607,32 @@ async function requireCourseManager(courseId: string) {
     return { success: false as const, error: "Нет прав на изменение этого курса." };
   }
 
-  return { success: true as const, supabase, profile, course };
+  const orgType = resolveCourseOrganizationType(course.organizations);
+
+  return {
+    success: true as const,
+    supabase,
+    profile,
+    course,
+    orgType,
+  };
+}
+
+function resolveCourseOrganizationType(
+  organizations:
+    | { org_type: Database["public"]["Enums"]["organization_type"] }
+    | { org_type: Database["public"]["Enums"]["organization_type"] }[]
+    | null,
+): Database["public"]["Enums"]["organization_type"] {
+  if (!organizations) {
+    return "school";
+  }
+
+  if (Array.isArray(organizations)) {
+    return organizations[0]?.org_type ?? "school";
+  }
+
+  return organizations.org_type;
 }
 
 /** Преподаватель отправляет курс на проверку администратором. */
@@ -622,6 +649,10 @@ export async function submitCourseForModeration(
       success: false,
       error: "Глобальный администратор публикует курсы через панель модерации.",
     };
+  }
+
+  if (auth.orgType === "corporate") {
+    return publishCourseForTeacher(courseId);
   }
 
   const currentStatus = parseCourseStatus(auth.course.status);
@@ -656,6 +687,64 @@ export async function submitCourseForModeration(
   if (updateError) {
     console.error("[submitCourseForModeration]", updateError.message);
     return { success: false, error: "Не удалось отправить курс на модерацию." };
+  }
+
+  revalidateTeacherCoursePaths(auth.course.slug);
+  return { success: true };
+}
+
+/** Корпоративная организация: публикация без модерации (доступ сотрудникам). */
+export async function publishCourseForTeacher(
+  courseId: string,
+): Promise<CourseModerationActionResult> {
+  const auth = await requireCourseManager(courseId);
+  if (!auth.success) {
+    return auth;
+  }
+
+  if (isGlobalAdmin(auth.profile)) {
+    return {
+      success: false,
+      error: "Глобальный администратор публикует курсы через панель модерации.",
+    };
+  }
+
+  if (auth.orgType !== "corporate") {
+    return {
+      success: false,
+      error: "Прямая публикация доступна только для корпоративных организаций.",
+    };
+  }
+
+  const currentStatus = parseCourseStatus(auth.course.status);
+
+  if (currentStatus === "published") {
+    return { success: false, error: "Курс уже опубликован для сотрудников." };
+  }
+
+  if (
+    currentStatus !== "draft" &&
+    currentStatus !== "hidden" &&
+    currentStatus !== "rejected" &&
+    currentStatus !== "moderation"
+  ) {
+    return {
+      success: false,
+      error: "Курс нельзя опубликовать в текущем статусе.",
+    };
+  }
+
+  const { error: updateError } = await auth.supabase
+    .from("courses")
+    .update({
+      status: "published",
+      rejection_reason: null,
+    })
+    .eq("id", auth.course.id);
+
+  if (updateError) {
+    console.error("[publishCourseForTeacher]", updateError.message);
+    return { success: false, error: "Не удалось опубликовать курс." };
   }
 
   revalidateTeacherCoursePaths(auth.course.slug);

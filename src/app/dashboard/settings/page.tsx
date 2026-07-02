@@ -48,14 +48,22 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const primaryStaffTenant = hasCreatorOrgAccess(tenants)
     ? (getPrimaryActiveStaffTenant(tenants) ?? tenants[0] ?? null)
     : null;
-  const staffSchoolBrandName =
+  const [staffSchoolBrandName, staffOrganizationType] =
     primaryStaffTenant != null
-      ? await fetchOrganizationBrandName(
-          supabase,
-          primaryStaffTenant.organizationId,
-          primaryStaffTenant.organizationName,
-        )
-      : null;
+      ? await Promise.all([
+          fetchOrganizationBrandName(
+            supabase,
+            primaryStaffTenant.organizationId,
+            primaryStaffTenant.organizationName,
+          ),
+          supabase
+            .from("organizations")
+            .select("org_type")
+            .eq("id", primaryStaffTenant.organizationId)
+            .maybeSingle()
+            .then(({ data }) => data?.org_type ?? null),
+        ])
+      : [null, null];
 
   const displayName =
     profile.full_name?.trim() ||
@@ -86,6 +94,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
             displayName={displayName}
             feedbackKey={feedbackKey}
             staffSchoolBrandName={staffSchoolBrandName}
+            staffOrganizationType={staffOrganizationType}
           />
         </div>
       </div>

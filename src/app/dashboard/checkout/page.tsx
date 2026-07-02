@@ -11,6 +11,8 @@ import {
 } from "@/lib/billing/checkout-rules";
 import { fetchOrganizationBrandName } from "@/lib/organization/brand-name";
 import { getPrimaryActiveStaffTenant, getUserTenantsSafe } from "@/lib/auth/tenant";
+import { validateCheckoutTransition } from "@/lib/billing-math";
+import { fetchOrganizationContentCounts } from "@/lib/billing/fetch-organization-content-counts";
 import {
   calculateTierTotalKopecks,
   getDiscountPercentForPeriod,
@@ -98,11 +100,48 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
   }
 
   const discountPercent = getDiscountPercentForPeriod(tier, period);
-  const totalKopecks = calculateTierTotalKopecks(
+  const baseTotalKopecks = calculateTierTotalKopecks(
     tier.price_monthly,
     period,
     tier,
   );
+  const { data: organizationBillingState } = await supabase
+    .from("organizations")
+    .select(
+      `
+      tier_id,
+      tier_expires_at,
+      subscription_tiers (
+        price_monthly,
+        category,
+        limits
+      )
+    `,
+    )
+    .eq("id", primaryTenant.organizationId)
+    .maybeSingle();
+
+  const currentTier = Array.isArray(organizationBillingState?.subscription_tiers)
+    ? organizationBillingState?.subscription_tiers[0]
+    : organizationBillingState?.subscription_tiers;
+
+  const contentCounts = await fetchOrganizationContentCounts(
+    supabase,
+    primaryTenant.organizationId,
+  );
+
+  const checkoutTransition = validateCheckoutTransition({
+    currentTierId: organizationBillingState?.tier_id ?? null,
+    nextTierId: tier.id,
+    currentTierCategory: currentTier?.category ?? null,
+    nextTierCategory: tier.category ?? null,
+    currentTierExpiresAt: organizationBillingState?.tier_expires_at ?? null,
+    currentTierMonthlyKopecks: currentTier?.price_monthly ?? null,
+    nextTierMonthlyKopecks: tier.price_monthly,
+    nextTierLimits: tier.limits,
+    currentCourseCount: contentCounts.currentCourseCount,
+    totalLessonCount: contentCounts.totalLessonCount,
+  });
 
   const periodLabel =
     period === 1 ? "1 месяц" : `${period} месяца`;
@@ -138,7 +177,10 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
         tierName={tier.name}
         period={period}
         periodLabel={periodLabel}
-        originalTotalKopecks={totalKopecks}
+        baseTotalKopecks={baseTotalKopecks}
+        bonusDays={checkoutTransition.bonusDays}
+        isUpgrade={checkoutTransition.isUpgrade}
+        checkoutError={checkoutTransition.error}
         tierDiscountPercent={discountPercent}
         initialB2BDetails={initialB2BDetails}
         hasPendingInvoice={userPending || orgPending}

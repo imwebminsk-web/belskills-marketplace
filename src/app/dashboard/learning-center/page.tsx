@@ -15,6 +15,7 @@ import {
 import { resolveOrganizationBrandName } from "@/lib/organization/showcase-profile";
 import { isProfilePubliclyVisible, parseShowcaseStatus } from "@/lib/organization/profile-status";
 import { createClient } from "@/lib/supabase/server";
+import type { OrganizationTypeValue } from "@/lib/validations/organization-schema";
 
 export const metadata: Metadata = {
   title: "Учебный центр",
@@ -54,7 +55,11 @@ export default async function LearningCenterPage() {
     redirect("/dashboard/settings");
   }
 
-  const [{ data: organizationProfileRaw, error: showcaseError }, { data: branches, error: branchesError }] =
+  const [
+    { data: organizationProfileRaw, error: showcaseError },
+    { data: branches, error: branchesError },
+    { data: organizationRow, error: organizationError },
+  ] =
     await Promise.all([
       supabase
         .from("organization_profiles")
@@ -66,6 +71,11 @@ export default async function LearningCenterPage() {
         .select("*")
         .eq("organization_id", primaryTenant.organizationId)
         .order("created_at", { ascending: true }),
+      supabase
+        .from("organizations")
+        .select("org_type")
+        .eq("id", primaryTenant.organizationId)
+        .maybeSingle(),
     ]);
 
   const organizationProfile = organizationProfileRaw
@@ -85,6 +95,10 @@ export default async function LearningCenterPage() {
     console.error("[LearningCenterPage] branches", branchesError.message);
     throw new Error("Не удалось загрузить филиалы");
   }
+  if (organizationError) {
+    console.error("[LearningCenterPage] organization", organizationError.message);
+    throw new Error("Не удалось загрузить организацию");
+  }
 
   const displayName =
     profile.full_name?.trim() ||
@@ -97,6 +111,7 @@ export default async function LearningCenterPage() {
   );
 
   const profileDeleted = Boolean(organizationProfile?.deleted_at);
+  const organizationType: OrganizationTypeValue = organizationRow?.org_type ?? "school";
   const profilePublished =
     organizationProfile &&
     isProfilePubliclyVisible(
@@ -144,6 +159,7 @@ export default async function LearningCenterPage() {
               profile={organizationProfile}
               branches={branches ?? []}
               organizationId={primaryTenant.organizationId}
+              organizationType={organizationType}
             />
           ) : (
             <div className="text-muted-foreground rounded-lg border border-dashed p-8 text-center text-sm">

@@ -9,6 +9,7 @@ import {
   SchoolShowcaseTabs,
 } from "@/components/showcase/school-showcase-tabs";
 import { WithSiteHeader } from "@/components/site/with-site-header";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   messengerContactHref,
   websiteContactHref,
@@ -19,6 +20,7 @@ import {
   normalizePhoneList,
   parseProfileMessengers,
 } from "@/lib/organization/showcase-profile";
+import { parseShowcaseStatus } from "@/lib/organization/profile-status";
 import { createClient } from "@/lib/supabase/server";
 import { normalizeRichTextHtml } from "@/lib/utils/rich-text-content";
 import type { Database } from "@/types/database.types";
@@ -35,6 +37,36 @@ type BranchRow = Pick<
 >;
 
 type MessengerKey = "telegram" | "viber" | "whatsapp";
+
+async function isPlatformAdminViewer(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("is_platform_admin");
+  if (error) {
+    console.error("[SchoolPage] is_platform_admin", error.message);
+    return false;
+  }
+  return data === true;
+}
+
+async function fetchSchoolProfileRow<T extends string>(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  slug: string,
+  allowUnpublished: boolean,
+  columns: T,
+) {
+  let query = supabase
+    .from("organization_profiles")
+    .select(columns)
+    .eq("slug", slug)
+    .is("deleted_at", null);
+
+  if (!allowUnpublished) {
+    query = query.eq("status", "published");
+  }
+
+  return query.maybeSingle();
+}
 
 function decodeSlugParam(slug: string): string {
   try {
@@ -67,14 +99,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { slug: rawSlug } = await params;
   const slug = decodeSlugParam(rawSlug);
   const supabase = await createClient();
+  const allowUnpublished = await isPlatformAdminViewer(supabase);
 
-  const { data: profile } = await supabase
-    .from("organization_profiles")
-    .select("public_name, short_description, logo_url, cover_url")
-    .eq("slug", slug)
-    .eq("status", "published")
-    .is("deleted_at", null)
-    .maybeSingle();
+  const { data: profile } = await fetchSchoolProfileRow(
+    supabase,
+    slug,
+    allowUnpublished,
+    "public_name, short_description, logo_url, cover_url",
+  );
 
   if (!profile) {
     return {
@@ -111,14 +143,15 @@ export default async function SchoolPage({ params }: PageProps) {
   const { slug: rawSlug } = await params;
   const slug = decodeSlugParam(rawSlug);
   const supabase = await createClient();
+  const allowUnpublished = await isPlatformAdminViewer(supabase);
 
-  const { data: profileStub, error: profileStubError } = await supabase
-    .from("organization_profiles")
-    .select("id, organization_id")
-    .eq("slug", slug)
-    .eq("status", "published")
-    .is("deleted_at", null)
-    .maybeSingle();
+  const { data: profileStub, error: profileStubError } =
+    await fetchSchoolProfileRow(
+      supabase,
+      slug,
+      allowUnpublished,
+      "id, organization_id, status",
+    );
 
   if (profileStubError) {
     console.error("[SchoolPage] profile lookup", profileStubError.message);
@@ -214,9 +247,25 @@ export default async function SchoolPage({ params }: PageProps) {
   const hasLegalFooter =
     Boolean(profile.legal_name?.trim()) || Boolean(profile.unp?.trim());
 
+  const previewStatus = profileStub.status
+    ? parseShowcaseStatus(profileStub.status)
+    : null;
+  const showAdminPreviewBanner =
+    allowUnpublished && previewStatus != null && previewStatus !== "published";
+
   return (
     <WithSiteHeader>
       <div className="bg-background min-h-screen">
+        {showAdminPreviewBanner ? (
+          <div className="mx-auto max-w-6xl px-4 pt-4 md:px-8">
+            <Alert>
+              <AlertDescription>
+                Режим предпросмотра для администратора: витрина в статусе «
+                {previewStatus}» и не видна обычным посетителям каталога.
+              </AlertDescription>
+            </Alert>
+          </div>
+        ) : null}
         {/* Hero — Job Board style */}
         <section
           aria-label="Учебный центр"

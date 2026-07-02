@@ -7,6 +7,10 @@ import {
   canManageCourse,
   loadAuthContext,
 } from "@/lib/auth/access";
+import {
+  assertCanCreateStructure,
+  getOrganizationTariffLimits,
+} from "@/lib/tariffs/tariff-guards";
 import { createClient } from "@/lib/supabase/server";
 import { createLessonSchema } from "@/lib/validations/curriculum-schema";
 import type { Database, Json } from "@/types/database.types";
@@ -154,6 +158,14 @@ export async function createModule(
   }
   const course = access.course;
 
+  const structureGuard = await assertCanCreateStructure(
+    supabase,
+    course.organization_id,
+  );
+  if (!structureGuard.ok) {
+    return { error: structureGuard.error };
+  }
+
   const { data: lastRow } = await supabase
     .from("modules")
     .select("order_index")
@@ -235,6 +247,18 @@ export async function createLesson(
   }
   const course = access.course;
 
+  const structureGuard = await assertCanCreateStructure(
+    supabase,
+    course.organization_id,
+  );
+  if (!structureGuard.ok) {
+    return { error: structureGuard.error };
+  }
+
+  const tariffLimits = course.organization_id
+    ? await getOrganizationTariffLimits(course.organization_id, supabase)
+    : { can_create_structure: false, max_content_lessons: null, force_demo: false };
+
   const { data: lastLesson } = await supabase
     .from("lessons")
     .select("order_index")
@@ -251,6 +275,7 @@ export async function createLesson(
       module_id: moduleId,
       title,
       order_index: orderIndex,
+      is_demo: tariffLimits.force_demo,
     })
     .select("id")
     .single();

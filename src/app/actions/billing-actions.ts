@@ -15,6 +15,11 @@ import {
 import { syncLegalFieldsToOrganizationProfile } from "@/lib/billing/organization-legal-sync";
 import { getPrimaryActiveStaffTenant } from "@/lib/auth/tenant";
 import {
+  calculateSubscriptionDaysAdded,
+  validateCheckoutTransition,
+} from "@/lib/billing-math";
+import { fetchOrganizationContentCounts } from "@/lib/billing/fetch-organization-content-counts";
+import {
   calculateTierTotalKopecks,
   parseBillingPeriod,
 } from "@/lib/utils/pricing";
@@ -143,7 +148,7 @@ export async function submitBillingRequest(
   const { data: tier, error: tierError } = await supabase
     .from("subscription_tiers")
     .select(
-      "id, name, price_monthly, discount_3_months, discount_6_months, discount_12_months, is_active",
+      "id, name, price_monthly, discount_3_months, discount_6_months, discount_12_months, is_active, category, limits",
     )
     .eq("id", data.tierId)
     .maybeSingle();
@@ -161,6 +166,48 @@ export async function submitBillingRequest(
     period,
     tier,
   );
+
+  const { data: organizationBillingState } = await supabase
+    .from("organizations")
+    .select(
+      `
+      tier_id,
+      tier_expires_at,
+      subscription_tiers (
+        price_monthly,
+        category,
+        limits
+      )
+    `,
+    )
+    .eq("id", data.organizationId)
+    .maybeSingle();
+
+  const currentTier = Array.isArray(organizationBillingState?.subscription_tiers)
+    ? organizationBillingState?.subscription_tiers[0]
+    : organizationBillingState?.subscription_tiers;
+
+  const contentCounts = await fetchOrganizationContentCounts(
+    supabase,
+    data.organizationId,
+  );
+
+  const checkoutTransition = validateCheckoutTransition({
+    currentTierId: organizationBillingState?.tier_id ?? null,
+    nextTierId: data.tierId,
+    currentTierCategory: currentTier?.category ?? null,
+    nextTierCategory: tier.category ?? null,
+    currentTierExpiresAt: organizationBillingState?.tier_expires_at ?? null,
+    currentTierMonthlyKopecks: currentTier?.price_monthly ?? null,
+    nextTierMonthlyKopecks: tier.price_monthly,
+    nextTierLimits: tier.limits,
+    currentCourseCount: contentCounts.currentCourseCount,
+    totalLessonCount: contentCounts.totalLessonCount,
+  });
+
+  if (checkoutTransition.error) {
+    return { success: false, error: checkoutTransition.error };
+  }
 
   let couponId: string | null = null;
   let couponCode: string | null = null;

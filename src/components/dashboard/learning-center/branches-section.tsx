@@ -26,9 +26,13 @@ const initialAddBranchState: AddBranchState = {};
 
 type BranchesSectionProps = {
   branches: OrganizationBranchRow[];
+  organizationId: string;
 };
 
-export function BranchesSection({ branches }: BranchesSectionProps) {
+export function BranchesSection({
+  branches,
+  organizationId,
+}: BranchesSectionProps) {
   const router = useRouter();
   const [addState, addFormAction, addPending] = useActionState(
     addBranch,
@@ -55,7 +59,7 @@ export function BranchesSection({ branches }: BranchesSectionProps) {
 
     setDeletingId(branch.id);
     startDeleteTransition(async () => {
-      const result = await deleteBranch(branch.id);
+      const result = await deleteBranch(branch.id, organizationId);
 
       if (!result.success) {
         toast.error(result.error);
@@ -131,6 +135,7 @@ export function BranchesSection({ branches }: BranchesSectionProps) {
         </CardHeader>
         <CardContent>
           <form action={addFormAction} className="space-y-4">
+            <input type="hidden" name="organization_id" value={organizationId} />
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="branch-city">Город</Label>

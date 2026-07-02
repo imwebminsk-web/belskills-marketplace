@@ -21,10 +21,12 @@ import {
 export function CourseEditorTabs({
   course,
   modules,
+  canCreateStructure,
   taxonomies = [],
 }: {
   course: CourseSettingsFormCourse;
   modules: CurriculumModuleRow[];
+  canCreateStructure: boolean;
   taxonomies?: TaxonomyRow[];
 }) {
   return (
@@ -47,6 +49,7 @@ export function CourseEditorTabs({
           courseId={course.id}
           courseSlug={course.slug}
           modules={modules}
+          canCreateStructure={canCreateStructure}
         />
       </TabsContent>
       <TabsContent value="students" className="mt-4 flex-none">

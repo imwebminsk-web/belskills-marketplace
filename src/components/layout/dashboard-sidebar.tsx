@@ -340,29 +340,6 @@ function DashboardSidebarPanel({
           ) : null}
         </Link>
 
-        <Link
-          href="/onboarding"
-          onClick={handleNavigate}
-          title="Create new school"
-          className={cn(
-            "flex items-center rounded-xl text-sm font-medium transition-colors",
-            isCollapsed
-              ? "justify-center px-0 py-2.5"
-              : "gap-3 px-3 py-2.5",
-            pathname.startsWith("/onboarding")
-              ? "bg-brand/10 font-medium text-brand"
-              : "text-muted-foreground hover:bg-growvy-body hover:text-foreground",
-          )}
-        >
-          <GrowvyCoursesIcon
-            className={cn(
-              "size-5 shrink-0",
-              pathname.startsWith("/onboarding") && "text-brand",
-            )}
-          />
-          {!isCollapsed ? <span>Create new school</span> : null}
-        </Link>
-
         <form action={signOut} className="w-full">
           <button
             type="submit"

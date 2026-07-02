@@ -7,6 +7,11 @@ import {
   canManageCourse,
   loadAuthContext,
 } from "@/lib/auth/access";
+import {
+  applyForceDemoFlagIfNeeded,
+  assertCanFillLessonContent,
+  getLessonCourseContext,
+} from "@/lib/tariffs/tariff-guards";
 import { createClient } from "@/lib/supabase/server";
 import type {
   LessonBlockActionState,
@@ -196,16 +201,33 @@ export async function updateBlock(
 
   const { data: block, error: be } = await supabase
     .from("lesson_blocks")
-    .select("id, lesson_id")
+    .select("id, lesson_id, type")
     .eq("id", bid)
     .maybeSingle();
   if (be || !block) {
     return { error: "Блок не найден." };
   }
 
+  const lessonContext = await getLessonCourseContext(supabase, block.lesson_id);
+  if (!lessonContext) {
+    return { error: "Урок не найден." };
+  }
+
   const slug = await getLessonOwnerSlug(supabase, user.id, block.lesson_id);
   if (!slug) {
     return { error: "Нет прав на изменение блока." };
+  }
+
+  const contentGuard = await assertCanFillLessonContent(
+    supabase,
+    lessonContext.organizationId,
+    lessonContext.courseId,
+    block.lesson_id,
+    block.type,
+    content,
+  );
+  if (!contentGuard.ok) {
+    return { error: contentGuard.error };
   }
 
   const { error: up } = await supabase
@@ -220,6 +242,12 @@ export async function updateBlock(
     console.error("[updateBlock]", up.message);
     return { error: up.message || "Не удалось сохранить блок." };
   }
+
+  await applyForceDemoFlagIfNeeded(
+    supabase,
+    block.lesson_id,
+    contentGuard.forceDemo,
+  );
 
   revalidatePath(`/dashboard/courses/${slug}/lessons/${block.lesson_id}`);
   revalidatePath(`/dashboard/courses/${slug}`);

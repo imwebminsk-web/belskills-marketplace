@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { loadAuthContext } from "@/lib/auth/access";
+import { loadAuthContext, canAccessOrganization, isGlobalAdmin } from "@/lib/auth/access";
 import {
   getPrimaryActiveStaffTenant,
   hasCreatorOrgAccess,
@@ -123,7 +123,30 @@ async function resolvePublicName(
   return organization?.name?.trim() || "Учебный центр";
 }
 
-async function requireShowcaseStaff() {
+async function resolveOrganizationSystemName(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+  fallbackName?: string,
+): Promise<string> {
+  const trimmedFallback = fallbackName?.trim();
+  if (trimmedFallback) {
+    return trimmedFallback;
+  }
+
+  const { data: organization, error } = await supabase
+    .from("organizations")
+    .select("name")
+    .eq("id", organizationId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[resolveOrganizationSystemName]", error.message);
+  }
+
+  return organization?.name?.trim() || "Учебный центр";
+}
+
+async function requireShowcaseStaff(organizationId?: string | null) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -139,7 +162,39 @@ async function requireShowcaseStaff() {
     return { success: false as const, error: "Профиль не найден." };
   }
 
-  if (!hasCreatorOrgAccess(tenants)) {
+  const globalAdmin = isGlobalAdmin(profile);
+  const requestedOrganizationId = organizationId?.trim() || null;
+
+  if (requestedOrganizationId) {
+    if (
+      !globalAdmin &&
+      !canAccessOrganization(profile, tenants, requestedOrganizationId)
+    ) {
+      return {
+        success: false as const,
+        error: "Нет доступа к этой организации.",
+      };
+    }
+
+    const organizationName = await resolveOrganizationSystemName(
+      supabase,
+      requestedOrganizationId,
+      tenants.find((tenant) => tenant.organizationId === requestedOrganizationId)
+        ?.organizationName,
+    );
+
+    return {
+      success: true as const,
+      supabase,
+      isGlobalAdmin: globalAdmin,
+      primaryTenant: {
+        organizationId: requestedOrganizationId,
+        organizationName,
+      },
+    };
+  }
+
+  if (!globalAdmin && !hasCreatorOrgAccess(tenants)) {
     return {
       success: false as const,
       error: "Доступ только для владельцев и кураторов школы.",
@@ -152,7 +207,24 @@ async function requireShowcaseStaff() {
     return { success: false as const, error: "Организация не найдена." };
   }
 
-  return { success: true as const, supabase, primaryTenant };
+  return {
+    success: true as const,
+    supabase,
+    isGlobalAdmin: globalAdmin,
+    primaryTenant,
+  };
+}
+
+function revalidateShowcaseEditorPaths(
+  organizationId: string,
+  slug?: string | null,
+) {
+  revalidatePath("/dashboard/learning-center");
+  revalidatePath(`/dashboard/admin/organizations/${organizationId}`);
+  revalidatePath("/dashboard/admin/organizations");
+  if (slug) {
+    revalidatePath(`/school/${slug}`);
+  }
 }
 
 async function fetchStaffOrganizationProfile(
@@ -184,7 +256,12 @@ async function fetchStaffOrganizationProfile(
 function resolveStatusAfterStaffEdit(
   currentStatus: OrganizationShowcaseStatus,
   resubmitToModeration: boolean,
+  skipModerationReset = false,
 ): OrganizationShowcaseStatus | undefined {
+  if (skipModerationReset) {
+    return undefined;
+  }
+
   if (currentStatus === "blocked") {
     return undefined;
   }
@@ -199,12 +276,8 @@ function resolveStatusAfterStaffEdit(
 export async function getOrganizationProfile(
   organizationId: string,
 ): Promise<OrganizationProfileRow | null> {
-  const auth = await requireShowcaseStaff();
+  const auth = await requireShowcaseStaff(organizationId);
   if (!auth.success) {
-    return null;
-  }
-
-  if (auth.primaryTenant.organizationId !== organizationId) {
     return null;
   }
 
@@ -230,12 +303,13 @@ export async function updateMainProfile(
   _prev: UpdateOrganizationProfileState,
   formData: FormData,
 ): Promise<UpdateOrganizationProfileState> {
-  const auth = await requireShowcaseStaff();
+  const organizationId = readFormText(formData, "organization_id");
+  const auth = await requireShowcaseStaff(organizationId);
   if (!auth.success) {
     return { ...emptyState, error: auth.error };
   }
 
-  const { supabase, primaryTenant } = auth;
+  const { supabase, primaryTenant, isGlobalAdmin } = auth;
 
   const profileResult = await fetchStaffOrganizationProfile(
     supabase,
@@ -288,6 +362,7 @@ export async function updateMainProfile(
   const nextStatus = resolveStatusAfterStaffEdit(
     currentStatus,
     data.resubmit_to_moderation,
+    isGlobalAdmin,
   );
 
   const { error } = await supabase
@@ -315,12 +390,12 @@ export async function updateMainProfile(
     legalName: data.legal_name,
   });
 
-  revalidatePath("/dashboard/learning-center");
+  revalidateShowcaseEditorPaths(
+    primaryTenant.organizationId,
+    profileResult.profile.slug,
+  );
   revalidatePath("/dashboard/checkout");
   revalidatePath("/dashboard/invoices");
-  if (profileResult.profile.slug) {
-    revalidatePath(`/school/${profileResult.profile.slug}`);
-  }
 
   return { success: true };
 }
@@ -329,12 +404,13 @@ export async function updateContactsProfile(
   _prev: UpdateOrganizationProfileState,
   formData: FormData,
 ): Promise<UpdateOrganizationProfileState> {
-  const auth = await requireShowcaseStaff();
+  const organizationId = readFormText(formData, "organization_id");
+  const auth = await requireShowcaseStaff(organizationId);
   if (!auth.success) {
     return { ...emptyState, error: auth.error };
   }
 
-  const { supabase, primaryTenant } = auth;
+  const { supabase, primaryTenant, isGlobalAdmin } = auth;
 
   const profileResult = await fetchStaffOrganizationProfile(
     supabase,
@@ -389,6 +465,7 @@ export async function updateContactsProfile(
   const nextStatus = resolveStatusAfterStaffEdit(
     currentStatus,
     data.resubmit_to_moderation,
+    isGlobalAdmin,
   );
 
   const { error } = await supabase
@@ -409,10 +486,10 @@ export async function updateContactsProfile(
     return { ...emptyState, error: "Не удалось сохранить контакты. Попробуйте позже." };
   }
 
-  revalidatePath("/dashboard/learning-center");
-  if (profileResult.profile.slug) {
-    revalidatePath(`/school/${profileResult.profile.slug}`);
-  }
+  revalidateShowcaseEditorPaths(
+    primaryTenant.organizationId,
+    profileResult.profile.slug,
+  );
 
   return { success: true };
 }
@@ -421,8 +498,9 @@ const emptyModerationState: ProfileModerationState = {};
 
 export async function submitProfileForModeration(
   _prev: ProfileModerationState,
+  organizationId?: string,
 ): Promise<ProfileModerationState> {
-  const auth = await requireShowcaseStaff();
+  const auth = await requireShowcaseStaff(organizationId);
   if (!auth.success) {
     return { ...emptyModerationState, error: auth.error };
   }
@@ -495,18 +573,16 @@ export async function submitProfileForModeration(
     };
   }
 
-  revalidatePath("/dashboard/learning-center");
-  if (profile.slug) {
-    revalidatePath(`/school/${profile.slug}`);
-  }
+  revalidateShowcaseEditorPaths(primaryTenant.organizationId, profile.slug);
 
   return { success: true };
 }
 
 export async function setProfileVisibility(
   visible: boolean,
+  organizationId?: string,
 ): Promise<ProfileModerationState> {
-  const auth = await requireShowcaseStaff();
+  const auth = await requireShowcaseStaff(organizationId);
   if (!auth.success) {
     return { ...emptyModerationState, error: auth.error };
   }
@@ -559,18 +635,16 @@ export async function setProfileVisibility(
     };
   }
 
-  revalidatePath("/dashboard/learning-center");
-  if (profile.slug) {
-    revalidatePath(`/school/${profile.slug}`);
-  }
+  revalidateShowcaseEditorPaths(primaryTenant.organizationId, profile.slug);
 
   return { success: true };
 }
 
 export async function softDeleteOrganizationProfile(
   legalNameConfirmation: string,
+  organizationId?: string,
 ): Promise<SoftDeleteProfileState> {
-  const auth = await requireShowcaseStaff();
+  const auth = await requireShowcaseStaff(organizationId);
   if (!auth.success) {
     return { error: auth.error };
   }
@@ -618,10 +692,7 @@ export async function softDeleteOrganizationProfile(
     return { error: "Не удалось удалить профиль." };
   }
 
-  revalidatePath("/dashboard/learning-center");
-  if (profile.slug) {
-    revalidatePath(`/school/${profile.slug}`);
-  }
+  revalidateShowcaseEditorPaths(primaryTenant.organizationId, profile.slug);
 
   return { success: true };
 }
@@ -642,7 +713,8 @@ export async function addBranch(
   _prev: AddBranchState,
   formData: FormData,
 ): Promise<AddBranchState> {
-  const auth = await requireShowcaseStaff();
+  const organizationId = readFormText(formData, "organization_id");
+  const auth = await requireShowcaseStaff(organizationId);
   if (!auth.success) {
     return { ...emptyBranchState, error: auth.error };
   }
@@ -676,15 +748,16 @@ export async function addBranch(
     return { ...emptyBranchState, error: "Не удалось добавить филиал." };
   }
 
-  revalidatePath("/dashboard/learning-center");
+  revalidateShowcaseEditorPaths(primaryTenant.organizationId);
 
   return { success: true };
 }
 
 export async function deleteBranch(
   branchId: string,
+  organizationId?: string,
 ): Promise<{ success: true } | { success: false; error: string }> {
-  const auth = await requireShowcaseStaff();
+  const auth = await requireShowcaseStaff(organizationId);
   if (!auth.success) {
     return auth;
   }
@@ -729,7 +802,7 @@ export async function deleteBranch(
     return { success: false, error: "Не удалось удалить филиал." };
   }
 
-  revalidatePath("/dashboard/learning-center");
+  revalidateShowcaseEditorPaths(primaryTenant.organizationId);
 
   return { success: true };
 }
@@ -739,11 +812,6 @@ export async function saveOrganizationLogo(
 ): Promise<
   { success: true; logoUrl: string } | { success: false; error: string }
 > {
-  const auth = await requireShowcaseStaff();
-  if (!auth.success) {
-    return auth;
-  }
-
   const parsedPath = organizationLogoPathSchema.safeParse(storagePath);
   if (!parsedPath.success) {
     return {
@@ -753,12 +821,13 @@ export async function saveOrganizationLogo(
     };
   }
 
-  const { supabase, primaryTenant } = auth;
   const organizationIdFromPath = storagePath.split("/")[0];
-
-  if (organizationIdFromPath !== primaryTenant.organizationId) {
-    return { success: false, error: "Нет доступа к этой организации." };
+  const auth = await requireShowcaseStaff(organizationIdFromPath);
+  if (!auth.success) {
+    return auth;
   }
+
+  const { supabase, primaryTenant } = auth;
 
   const {
     data: { publicUrl },
@@ -779,7 +848,7 @@ export async function saveOrganizationLogo(
     return { success: false, error: "Не удалось сохранить логотип." };
   }
 
-  revalidatePath("/dashboard/learning-center");
+  revalidateShowcaseEditorPaths(primaryTenant.organizationId);
 
   return { success: true, logoUrl };
 }
@@ -791,10 +860,11 @@ export type OrganizationSlugAvailability = {
 
 export async function checkOrganizationSlugAvailability(
   slug: string,
+  organizationId?: string,
 ): Promise<
   { success: true; data: OrganizationSlugAvailability } | { success: false; error: string }
 > {
-  const auth = await requireShowcaseStaff();
+  const auth = await requireShowcaseStaff(organizationId);
   if (!auth.success) {
     return auth;
   }
@@ -846,8 +916,9 @@ export async function checkOrganizationSlugAvailability(
 
 export async function updateOrganizationSlug(
   slug: string,
+  organizationId?: string,
 ): Promise<{ success: true; slug: string } | { success: false; error: string }> {
-  const auth = await requireShowcaseStaff();
+  const auth = await requireShowcaseStaff(organizationId);
   if (!auth.success) {
     return auth;
   }
@@ -862,21 +933,16 @@ export async function updateOrganizationSlug(
 
   const { supabase, primaryTenant } = auth;
 
-  console.log(
-    "DEBUG [showcase-actions]: Fetching profile for Org ID:",
-    primaryTenant?.organizationId,
-  );
-
   const { data: ownProfile, error: fetchError } = await supabase
     .from("organization_profiles")
     .select("id, slug, organization_id")
     .eq("organization_id", primaryTenant.organizationId)
     .maybeSingle();
 
-  console.log("DEBUG [showcase-actions]: Fetch Result:", {
-    ownProfile,
-    fetchError,
-  });
+  if (fetchError) {
+    console.error("[updateOrganizationSlug] fetch", fetchError.message);
+    return { success: false, error: "Не удалось загрузить профиль." };
+  }
 
   if (!ownProfile) {
     return { success: false, error: "Профиль учебного центра не найден." };
@@ -916,19 +982,18 @@ export async function updateOrganizationSlug(
     return { success: false, error: "Не удалось сохранить адрес страницы." };
   }
 
-  revalidatePath("/dashboard/learning-center");
-  revalidatePath(`/school/${parsed.data}`);
-  if (previousSlug !== parsed.data) {
+  revalidateShowcaseEditorPaths(primaryTenant.organizationId, parsed.data);
+  if (previousSlug && previousSlug !== parsed.data) {
     revalidatePath(`/school/${previousSlug}`);
   }
 
   return { success: true, slug: parsed.data };
 }
 
-export async function deleteOrganizationLogo(): Promise<
-  { success: true } | { success: false; error: string }
-> {
-  const auth = await requireShowcaseStaff();
+export async function deleteOrganizationLogo(
+  organizationId?: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  const auth = await requireShowcaseStaff(organizationId);
   if (!auth.success) {
     return auth;
   }
@@ -979,10 +1044,7 @@ export async function deleteOrganizationLogo(): Promise<
     return { success: false, error: "Не удалось обновить профиль." };
   }
 
-  revalidatePath("/dashboard/learning-center");
-  if (profile.slug) {
-    revalidatePath(`/school/${profile.slug}`);
-  }
+  revalidateShowcaseEditorPaths(primaryTenant.organizationId, profile.slug);
 
   return { success: true };
 }

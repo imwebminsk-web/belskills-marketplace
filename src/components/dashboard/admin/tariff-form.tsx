@@ -82,7 +82,7 @@ export function TariffForm({ tariff, onSuccess, onCancel }: TariffFormProps) {
             defaultValue={tariff?.id ?? ""}
             readOnly={isEditing}
             required
-            placeholder="pro"
+            placeholder="pro-plus"
             className={isEditing ? "bg-muted" : undefined}
           />
         </div>
@@ -93,7 +93,7 @@ export function TariffForm({ tariff, onSuccess, onCancel }: TariffFormProps) {
             name="name"
             defaultValue={tariff?.name ?? ""}
             required
-            placeholder="Pro"
+            placeholder="Профессиональный"
           />
         </div>
       </div>
@@ -197,7 +197,7 @@ export function TariffForm({ tariff, onSuccess, onCancel }: TariffFormProps) {
           name="limits_text"
           defaultValue={jsonArrayToLines(tariff?.limits_text)}
           rows={5}
-          placeholder="One limit per line"
+          placeholder="Добавить текстовое описание лимита…"
         />
       </div>
 
@@ -209,7 +209,7 @@ export function TariffForm({ tariff, onSuccess, onCancel }: TariffFormProps) {
             name="features"
             defaultValue={jsonArrayToLines(tariff?.features)}
             rows={6}
-            placeholder="One feature per line"
+            placeholder="Добавить возможность…"
           />
         </div>
         <div className="space-y-2">
@@ -219,20 +219,60 @@ export function TariffForm({ tariff, onSuccess, onCancel }: TariffFormProps) {
             name="presents"
             defaultValue={jsonArrayToLines(tariff?.presents)}
             rows={6}
-            placeholder="One feature per line"
+            placeholder="Добавить бонус…"
           />
         </div>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-3">
         <Label htmlFor="tariff-limits">Лимиты (JSON)</Label>
+        <div className="bg-muted/40 text-muted-foreground space-y-3 rounded-lg border p-4 text-sm">
+          <p className="text-foreground font-medium">Шпаргалка по лимитам (JSON)</p>
+          <p>
+            Используйте формат JSON для настройки системных ограничений. Значение{" "}
+            <code className="bg-muted rounded px-1 font-mono text-xs">null</code>{" "}
+            означает безлимит.
+          </p>
+          <ul className="list-inside list-disc space-y-1">
+            <li>
+              <code className="font-mono text-xs">&quot;max_courses&quot;: число | null</code>{" "}
+              — максимальное количество курсов.
+            </li>
+            <li>
+              <code className="font-mono text-xs">&quot;max_lessons&quot;: число | null</code>{" "}
+              — максимальное количество уроков в курсе.
+            </li>
+            <li>
+              <code className="font-mono text-xs">&quot;max_users&quot;: число | null</code>{" "}
+              — лимит сотрудников (только для корпораций).
+            </li>
+            <li>
+              <code className="font-mono text-xs">&quot;lms_unlocked&quot;: true | false</code>{" "}
+              — доступ к LMS. Если{" "}
+              <code className="bg-muted rounded px-1 font-mono text-xs">false</code>, уроки
+              станут демо-версиями.
+            </li>
+          </ul>
+          <div className="space-y-2">
+            <p className="text-foreground font-medium">Пример для Каталога:</p>
+            <pre className="bg-background overflow-x-auto rounded-md border p-3 font-mono text-xs">
+              {`{"max_courses": 3, "max_lessons": 3, "lms_unlocked": false, "max_users": null}`}
+            </pre>
+          </div>
+          <div className="space-y-2">
+            <p className="text-foreground font-medium">Пример для Системы обучения:</p>
+            <pre className="bg-background overflow-x-auto rounded-md border p-3 font-mono text-xs">
+              {`{"max_courses": 12, "max_lessons": null, "lms_unlocked": true, "max_users": null}`}
+            </pre>
+          </div>
+        </div>
         <Textarea
           id="tariff-limits"
           name="limits"
           defaultValue={limitsToInput(tariff?.limits)}
-          rows={5}
+          rows={6}
           className="font-mono text-sm"
-          placeholder='{"courses": 10, "lessons": 20}'
+          placeholder='{"max_courses": 3, "max_lessons": 3, "lms_unlocked": false, "max_users": null}'
         />
       </div>
 

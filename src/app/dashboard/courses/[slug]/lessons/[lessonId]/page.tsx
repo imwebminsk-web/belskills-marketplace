@@ -9,6 +9,12 @@ import { SiteHeader } from "@/components/site-header";
 import { canManageCourse, hasStaffAccess } from "@/lib/auth/access";
 import { getUserTenantsSafe } from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
+import {
+  getCourseContentStats,
+  getOrganizationTariffLimits,
+  isContentEditingBlocked,
+  type OrganizationTariffLimits,
+} from "@/lib/tariffs/tariff-guards";
 import type { Json } from "@/types/database.types";
 
 type PageProps = {
@@ -138,6 +144,25 @@ export default async function LessonEditorPage({ params }: PageProps) {
     user.email?.split("@")[0] ||
     "Пользователь";
 
+  const tariffLimits: OrganizationTariffLimits = course.organization_id
+    ? await getOrganizationTariffLimits(course.organization_id, supabase)
+    : {
+        can_create_structure: false,
+        max_content_lessons: null,
+        force_demo: false,
+      };
+
+  const contentStats = await getCourseContentStats(
+    supabase,
+    course.id,
+    lessonId,
+  );
+
+  const contentEditingBlocked = isContentEditingBlocked(
+    tariffLimits,
+    contentStats,
+  );
+
   return (
     <>
       <SiteHeader fullName={displayName} />
@@ -152,6 +177,8 @@ export default async function LessonEditorPage({ params }: PageProps) {
           }}
           blocks={blocks}
           tests={tests}
+          canFillContent={!contentEditingBlocked}
+          maxContentLessons={tariffLimits.max_content_lessons}
         />
       </div>
     </>

@@ -264,6 +264,7 @@ const getPublishedCourseBySlug = cache(
         start_date_type,
         level,
         promotional_images,
+        organizations!inner(org_type),
         modules (
           id,
           title,
@@ -280,6 +281,7 @@ const getPublishedCourseBySlug = cache(
       )
       .eq("slug", decodedSlug)
       .eq("status", "published")
+      .eq("organizations.org_type", "school")
       .maybeSingle();
 
     if (error) {

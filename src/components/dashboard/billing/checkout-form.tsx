@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState, type ReactNode } from "react";
+import { useActionState, useState, type FormEvent, type ReactNode } from "react";
 import { CheckCircle2, CreditCard, FileText, Landmark } from "lucide-react";
+import { toast } from "sonner";
 
 import { submitBillingRequest } from "@/app/actions/billing-actions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -11,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { PENDING_INVOICE_MESSAGE } from "@/lib/billing/checkout-rules";
 import type { BillingPeriod } from "@/lib/utils/pricing";
 import { cn } from "@/lib/utils";
 
@@ -33,7 +35,8 @@ type CheckoutFormProps = {
   period: BillingPeriod;
   initialB2BDetails?: B2BBillingDetails | null;
   couponId?: string | null;
-  disabled?: boolean;
+  validationError?: string | null;
+  hasPendingInvoice?: boolean;
 };
 
 type FormState = {
@@ -109,7 +112,8 @@ export function CheckoutForm({
   period,
   initialB2BDetails,
   couponId,
-  disabled = false,
+  validationError = null,
+  hasPendingInvoice = false,
 }: CheckoutFormProps) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
   const isBank = paymentMethod === "bank_transfer";
@@ -184,8 +188,21 @@ export function CheckoutForm({
     );
   }
 
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (hasPendingInvoice) {
+      event.preventDefault();
+      toast.error(PENDING_INVOICE_MESSAGE);
+      return;
+    }
+
+    if (validationError) {
+      event.preventDefault();
+      toast.error(validationError);
+    }
+  }
+
   return (
-    <form action={formAction} className="flex flex-col gap-6">
+    <form action={formAction} onSubmit={handleSubmit} className="flex flex-col gap-6">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="tierId" value={tierId} />
       <input type="hidden" name="periodMonths" value={period} />
@@ -326,7 +343,7 @@ export function CheckoutForm({
 
       <Button
         type="submit"
-        disabled={pending || disabled}
+        disabled={pending}
         className={cn(
           "h-11 w-full text-base font-semibold",
           "bg-brand text-brand-foreground hover:bg-brand/90",

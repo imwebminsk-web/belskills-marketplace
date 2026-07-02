@@ -618,6 +618,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          is_demo: boolean
           is_published: boolean
           module_id: string
           order_index: number
@@ -627,6 +628,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          is_demo?: boolean
           is_published?: boolean
           module_id: string
           order_index?: number
@@ -636,6 +638,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          is_demo?: boolean
           is_published?: boolean
           module_id?: string
           order_index?: number
@@ -897,6 +900,7 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          org_type: Database["public"]["Enums"]["organization_type"]
           tier_expires_at: string | null
           tier_id: string | null
         }
@@ -904,6 +908,7 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
+          org_type?: Database["public"]["Enums"]["organization_type"]
           tier_expires_at?: string | null
           tier_id?: string | null
         }
@@ -911,6 +916,7 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
+          org_type?: Database["public"]["Enums"]["organization_type"]
           tier_expires_at?: string | null
           tier_id?: string | null
         }
@@ -996,6 +1002,7 @@ export type Database = {
         Row: {
           avatar_url: string | null
           bio: string | null
+          employer_id: string | null
           full_name: string | null
           id: string
           is_global_admin: boolean
@@ -1006,6 +1013,7 @@ export type Database = {
         Insert: {
           avatar_url?: string | null
           bio?: string | null
+          employer_id?: string | null
           full_name?: string | null
           id: string
           is_global_admin?: boolean
@@ -1016,6 +1024,7 @@ export type Database = {
         Update: {
           avatar_url?: string | null
           bio?: string | null
+          employer_id?: string | null
           full_name?: string | null
           id?: string
           is_global_admin?: boolean
@@ -1023,7 +1032,15 @@ export type Database = {
           role?: Database["public"]["Enums"]["profile_role"]
           specialization?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_employer_id_fkey"
+            columns: ["employer_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       questions: {
         Row: {
@@ -1154,6 +1171,7 @@ export type Database = {
       }
       subscription_tiers: {
         Row: {
+          category: string | null
           description: string | null
           discount_12_months: number
           discount_3_months: number
@@ -1169,6 +1187,7 @@ export type Database = {
           priority_level: number
         }
         Insert: {
+          category?: string | null
           description?: string | null
           discount_12_months?: number
           discount_3_months?: number
@@ -1184,6 +1203,7 @@ export type Database = {
           priority_level?: number
         }
         Update: {
+          category?: string | null
           description?: string | null
           discount_12_months?: number
           discount_3_months?: number
@@ -1493,6 +1513,7 @@ export type Database = {
         | "hidden"
         | "blocked"
         | "rejected"
+      organization_type: "school" | "corporate"
       profile_role: "admin" | "teacher" | "student"
       start_date_type: "fixed" | "on_demand"
       submission_status: "pending" | "approved" | "rejected"
@@ -1651,6 +1672,7 @@ export const Constants = {
         "blocked",
         "rejected",
       ],
+      organization_type: ["school", "corporate"],
       profile_role: ["admin", "teacher", "student"],
       start_date_type: ["fixed", "on_demand"],
       submission_status: ["pending", "approved", "rejected"],

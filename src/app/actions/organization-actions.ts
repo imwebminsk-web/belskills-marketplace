@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { loadAuthContext } from "@/lib/auth/access";
 import { hasCreatorOrgAccess } from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
+import { createTrialOrganizationSchema } from "@/lib/validations/organization-schema";
 
 export type CreateTrialOrganizationState = {
   error?: string;
@@ -19,11 +20,19 @@ export async function createTrialOrganization(
   _prev: CreateTrialOrganizationState,
   formData: FormData,
 ): Promise<CreateTrialOrganizationState> {
-  const schoolName = String(formData.get("schoolName") ?? "").trim();
+  const parsed = createTrialOrganizationSchema.safeParse({
+    schoolName: formData.get("schoolName"),
+    org_type: formData.get("org_type"),
+  });
 
-  if (!schoolName) {
-    return { ...initial, error: "Укажите название школы." };
+  if (!parsed.success) {
+    return {
+      ...initial,
+      error: parsed.error.issues[0]?.message ?? "Некорректные данные формы.",
+    };
   }
+
+  const { schoolName, org_type: orgType } = parsed.data;
 
   const supabase = await createClient();
   const {
@@ -48,6 +57,7 @@ export async function createTrialOrganization(
     .from("organizations")
     .insert({
       name: schoolName,
+      org_type: orgType,
       tier_id: "free",
     })
     .select("id")

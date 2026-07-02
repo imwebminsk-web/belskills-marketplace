@@ -135,7 +135,7 @@ export function LogoUploader({
 
     setDeleting(true);
     try {
-      const result = await deleteOrganizationLogo();
+      const result = await deleteOrganizationLogo(organizationId);
       if (!result.success) {
         toast.error(result.error || "Не удалось удалить логотип.");
         return;

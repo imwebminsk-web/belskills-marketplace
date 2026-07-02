@@ -10,10 +10,10 @@ type SupabaseServerClient = Awaited<
 >;
 
 const CATALOG_SELECT =
-  "id, title, slug, description, image_url, price, marketing_audience, level, age_group, target_audience, delivery_format, language" as const;
+  "id, title, slug, description, image_url, price, marketing_audience, level, age_group, target_audience, delivery_format, language, organizations!inner(org_type)" as const;
 
 /**
- * Публичный каталог: опубликованные курсы.
+ * Публичный каталог: опубликованные курсы только школ (не корпоративные).
  * Каскадное скрытие (курс виден только при published-организации) обеспечивается RLS
  * `courses_select_visible` в миграции organization_rejection_and_courses_cascade.
  */
@@ -25,7 +25,8 @@ export async function fetchPublicCatalogCourses(
   let query = supabase
     .from("courses")
     .select(CATALOG_SELECT)
-    .eq("status", "published");
+    .eq("status", "published")
+    .eq("organizations.org_type", "school");
 
   const audienceLabel = taxonomyLabelForValue(
     taxonomies,
@@ -79,5 +80,5 @@ export async function fetchPublicCatalogCourses(
     return [];
   }
 
-  return data ?? [];
+  return (data ?? []).map(({ organizations: _org, ...course }) => course);
 }

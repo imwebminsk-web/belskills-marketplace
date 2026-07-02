@@ -13,6 +13,11 @@ import { canManageCourse, hasStaffAccess } from "@/lib/auth/access";
 import { parseCourseStatus } from "@/lib/course/course-status";
 import { getUserTenantsSafe } from "@/lib/auth/tenant";
 import { createClient } from "@/lib/supabase/server";
+import {
+  getOrganizationTariffLimits,
+  type OrganizationTariffLimits,
+} from "@/lib/tariffs/tariff-guards";
+import type { OrganizationTypeValue } from "@/lib/validations/organization-schema";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -95,6 +100,9 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
       duration_unit,
       start_date,
       organization_id,
+      organizations (
+        org_type
+      ),
       modules (
         id,
         title,
@@ -147,6 +155,11 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
 
   const courseStatus = parseCourseStatus(courseRow.status);
   const rejectionReason = courseRow.rejection_reason?.trim() ?? null;
+  const organization = courseRow.organizations;
+  const orgType: OrganizationTypeValue = Array.isArray(organization)
+    ? (organization[0]?.org_type ?? "school")
+    : (organization?.org_type ?? "school");
+  const isCorporate = orgType === "corporate";
 
   const course = {
     id: courseRow.id,
@@ -186,13 +199,21 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
         .sort((a, b) => a.order_index - b.order_index),
     }));
 
+  const tariffLimits: OrganizationTariffLimits = courseRow.organization_id
+    ? await getOrganizationTariffLimits(courseRow.organization_id, supabase)
+    : {
+        can_create_structure: false,
+        max_content_lessons: null,
+        force_demo: false,
+      };
+
   return (
     <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-8">
       <Button variant="ghost" className="w-fit px-0" asChild>
         <Link href="/dashboard/courses">← Назад</Link>
       </Button>
 
-      {courseStatus === "rejected" ? (
+      {courseStatus === "rejected" && !isCorporate ? (
         <Alert variant="destructive">
           <AlertCircleIcon />
           <AlertTitle>Курс отклонён модератором</AlertTitle>
@@ -215,12 +236,14 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
         <CourseModerationHeader
           courseId={course.id}
           status={courseStatus}
+          orgType={orgType}
         />
       </header>
 
       <CourseEditorTabs
         course={course}
         modules={modules}
+        canCreateStructure={tariffLimits.can_create_structure}
         taxonomies={
           taxonomiesRes?.success && taxonomiesRes?.data ? taxonomiesRes.data : []
         }

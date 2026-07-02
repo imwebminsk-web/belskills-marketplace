@@ -56,6 +56,7 @@ import {
   SOCIAL_LINK_LABELS,
 } from "@/lib/organization/showcase-profile";
 import { cn } from "@/lib/utils";
+import type { OrganizationTypeValue } from "@/lib/validations/organization-schema";
 
 const initialState: UpdateOrganizationProfileState = {};
 
@@ -101,6 +102,9 @@ type ProfileFormProps = {
   profile: OrganizationProfileRow;
   branches: OrganizationBranchRow[];
   organizationId: string;
+  organizationType?: OrganizationTypeValue;
+  /** When true, hides owner moderation controls and dangerous delete actions. */
+  adminMode?: boolean;
 };
 
 type PendingFormTarget = "main" | "contacts";
@@ -130,6 +134,8 @@ export function ProfileForm({
   profile,
   branches,
   organizationId,
+  organizationType = "school",
+  adminMode = false,
 }: ProfileFormProps) {
   const router = useRouter();
   const messengers = parseProfileMessengers(profile.messengers);
@@ -154,6 +160,14 @@ export function ProfileForm({
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, startDeleteTransition] = useTransition();
+  const brandLabel =
+    organizationType === "corporate"
+      ? "Название организации"
+      : "Неофициальное название (Бренд)";
+  const brandPlaceholder =
+    organizationType === "corporate"
+      ? "Например: ООО 'Рога и Копыта'"
+      : "Например, Belskills Academy";
 
   const mainFormRef = useRef<HTMLFormElement>(null);
   const contactsFormRef = useRef<HTMLFormElement>(null);
@@ -230,6 +244,10 @@ export function ProfileForm({
     event: React.FormEvent<HTMLFormElement>,
     target: PendingFormTarget,
   ) {
+    if (adminMode) {
+      return;
+    }
+
     if (
       status === "published" &&
       !allowPublishedSubmitRef.current &&
@@ -251,7 +269,10 @@ export function ProfileForm({
   function handleDeleteProfile() {
     setDeleteError(null);
     startDeleteTransition(async () => {
-      const result = await softDeleteOrganizationProfile(deleteConfirmName);
+      const result = await softDeleteOrganizationProfile(
+        deleteConfirmName,
+        organizationId,
+      );
       if (result.error) {
         setDeleteError(result.error);
         return;
@@ -272,9 +293,14 @@ export function ProfileForm({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="mb-6">
-          <ProfileStatusBanner profile={profile} />
-        </div>
+        {!adminMode ? (
+          <div className="mb-6">
+            <ProfileStatusBanner
+              profile={profile}
+              organizationId={organizationId}
+            />
+          </div>
+        ) : null}
 
         <Tabs defaultValue="main" className="w-full">
           <TabsList className="mb-6 grid h-auto w-full grid-cols-3 gap-1 rounded-lg bg-transparent p-1">
@@ -296,6 +322,7 @@ export function ProfileForm({
               className="space-y-6"
               onSubmit={(event) => handleFormSubmit(event, "main")}
             >
+              <input type="hidden" name="organization_id" value={organizationId} />
               <input
                 type="hidden"
                 name="resubmit_to_moderation"
@@ -348,13 +375,13 @@ export function ProfileForm({
 
               <div className="space-y-2">
                 <Label htmlFor="public_name">
-                  Неофициальное название (Бренд)
+                  {brandLabel}
                 </Label>
                 <Input
                   id="public_name"
                   name="public_name"
                   defaultValue={profile.public_name}
-                  placeholder="Например, Belskills Academy"
+                  placeholder={brandPlaceholder}
                   disabled={mainPending || isBlocked}
                 />
                 <p className="text-muted-foreground text-xs">
@@ -369,7 +396,10 @@ export function ProfileForm({
                 brandDisplayName={profile.public_name}
               />
 
-              <SlugField initialSlug={profile.slug} />
+              <SlugField
+                initialSlug={profile.slug}
+                organizationId={organizationId}
+              />
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
@@ -424,29 +454,31 @@ export function ProfileForm({
                 {mainPending ? "Сохранение…" : "Сохранить основное"}
               </Button>
 
-              <div className="space-y-4 rounded-lg border border-destructive/50 p-4">
-                <div>
-                  <h3 className="text-destructive text-sm font-semibold">
-                    Опасная зона
-                  </h3>
-                  <p className="text-muted-foreground mt-1 text-xs">
-                    Удаление скрывает профиль из каталога и панели управления.
-                    Данные сохраняются в системе.
-                  </p>
+              {!adminMode ? (
+                <div className="space-y-4 rounded-lg border border-destructive/50 p-4">
+                  <div>
+                    <h3 className="text-destructive text-sm font-semibold">
+                      Опасная зона
+                    </h3>
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      Удаление скрывает профиль из каталога и панели управления.
+                      Данные сохраняются в системе.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => {
+                      setDeleteError(null);
+                      setDeleteConfirmName("");
+                      setDeleteDialogOpen(true);
+                    }}
+                    disabled={isBlocked}
+                  >
+                    Удалить профиль
+                  </Button>
                 </div>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={() => {
-                    setDeleteError(null);
-                    setDeleteConfirmName("");
-                    setDeleteDialogOpen(true);
-                  }}
-                  disabled={isBlocked}
-                >
-                  Удалить профиль
-                </Button>
-              </div>
+              ) : null}
             </form>
           </TabsContent>
 
@@ -457,6 +489,7 @@ export function ProfileForm({
               className="space-y-6"
               onSubmit={(event) => handleFormSubmit(event, "contacts")}
             >
+              <input type="hidden" name="organization_id" value={organizationId} />
               <input
                 type="hidden"
                 name="resubmit_to_moderation"
@@ -625,7 +658,10 @@ export function ProfileForm({
           </TabsContent>
 
           <TabsContent value="branches">
-            <BranchesSection branches={branches} />
+            <BranchesSection
+              branches={branches}
+              organizationId={organizationId}
+            />
           </TabsContent>
         </Tabs>
 

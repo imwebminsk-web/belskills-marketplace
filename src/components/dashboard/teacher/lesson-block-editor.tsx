@@ -29,6 +29,7 @@ import type {
   LessonBlockType,
 } from "@/lib/lesson-blocks/lesson-block-types";
 import { LessonBlockImageUpload } from "@/components/dashboard/teacher/lesson-block-image-upload";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -181,9 +182,11 @@ function BlockTypeIcon({ type }: { type: LessonBlockType }) {
 function TextBlockEditor({
   blockId,
   content,
+  disabled = false,
 }: {
   blockId: string;
   content: Json;
+  disabled?: boolean;
 }) {
   const router = useRouter();
   const [html, setHtml] = useState(() => readHtml(content));
@@ -194,6 +197,9 @@ function TextBlockEditor({
   }, [blockId, content]);
 
   async function save() {
+    if (disabled) {
+      return;
+    }
     setSaving(true);
     const res = await updateBlock(blockId, { html });
     setSaving(false);
@@ -206,12 +212,12 @@ function TextBlockEditor({
 
   return (
     <div className="space-y-2">
-      <Editor value={html} onChange={setHtml} />
+      <Editor value={html} onChange={setHtml} disabled={disabled} />
       <Button
         type="button"
         size="sm"
         variant="secondary"
-        disabled={saving}
+        disabled={saving || disabled}
         onClick={() => void save()}
       >
         {saving ? "Сохранение…" : "Сохранить текст"}
@@ -226,12 +232,16 @@ export function LessonBlockEditor({
   lesson,
   blocks,
   tests,
+  canFillContent = true,
+  maxContentLessons = null,
 }: {
   courseSlug: string;
   courseTitle: string;
   lesson: LessonBlockEditorLesson;
   blocks: LessonEditorBlockRow[];
   tests: { id: string; title: string; folder_name?: string | null }[];
+  canFillContent?: boolean;
+  maxContentLessons?: number | null;
 }) {
   const router = useRouter();
   const sorted = useMemo(
@@ -285,6 +295,12 @@ export function LessonBlockEditor({
   const courseHref = `/dashboard/courses/${encodeURIComponent(courseSlug)}`;
 
   async function handleAdd(type: LessonBlockType) {
+    if (
+      !canFillContent &&
+      (type === "text" || type === "youtube" || type === "vimeo")
+    ) {
+      return;
+    }
     setAdding(type);
     const res = await addBlock(lesson.id, type);
     setAdding(null);
@@ -375,6 +391,15 @@ export function LessonBlockEditor({
         </Button>
       </Form>
 
+      {!canFillContent ? (
+        <Alert variant="destructive">
+          <AlertDescription>
+            Ваш тариф позволяет наполнить контентом только{" "}
+            {maxContentLessons ?? 3} демо-урока
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-medium tracking-tight">Блоки урока</h2>
         <DropdownMenu>
@@ -401,7 +426,11 @@ export function LessonBlockEditor({
             ).map((t) => (
               <DropdownMenuItem
                 key={t}
-                disabled={adding !== null}
+                disabled={
+                  adding !== null ||
+                  (!canFillContent &&
+                    (t === "text" || t === "youtube" || t === "vimeo"))
+                }
                 onSelect={() => void handleAdd(t)}
               >
                 <span className="flex items-center gap-2">
@@ -465,7 +494,11 @@ export function LessonBlockEditor({
               </CardHeader>
               <CardContent className="pt-4">
                 {block.type === "text" ? (
-                  <TextBlockEditor blockId={block.id} content={block.content} />
+                  <TextBlockEditor
+                    blockId={block.id}
+                    content={block.content}
+                    disabled={!canFillContent}
+                  />
                 ) : null}
                 {block.type === "image" ? (
                   <LessonBlockImageUpload
@@ -487,7 +520,11 @@ export function LessonBlockEditor({
                         defaultValue={readUrl(block.content)}
                         placeholder="https://…"
                         className="font-mono text-sm"
+                        disabled={!canFillContent}
                         onBlur={async (e) => {
+                          if (!canFillContent) {
+                            return;
+                          }
                           const url = e.target.value.trim();
                           const res = await updateBlock(block.id, { url });
                           if (res.error) window.alert(res.error);

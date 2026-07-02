@@ -1,20 +1,26 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { CheckCircle, Cpu, Gift } from "lucide-react";
+import { toast } from "sonner";
 
 import type { TariffRow } from "@/app/actions/tariff-actions";
 import type { BillingPeriod } from "@/components/dashboard/tariffs/tariffs-client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { PENDING_INVOICE_MESSAGE } from "@/lib/billing/checkout-rules";
+import {
+  buildTierLimitLines,
+  resolveTariffPriceKopecks,
+} from "@/lib/tariffs/format-tier-limits";
 import {
   formatPriceByn,
   getDiscountedPriceInRubles,
   kopecksToRubles,
   rublesToKopecks,
 } from "@/lib/utils/pricing";
-import type { Json } from "@/types/database.types";
 import { cn } from "@/lib/utils";
+import type { Json } from "@/types/database.types";
 
 type TariffCardProps = {
   tariff: TariffRow;
@@ -23,12 +29,14 @@ type TariffCardProps = {
   currentTierPrice: number;
   hasUsedTrial: boolean;
   hasPendingInvoice?: boolean;
+  checkoutBlockReason?: string | null;
 };
 
 type TariffButtonState = {
   label: string;
-  disabled: boolean;
+  isHardBlocked: boolean;
   useBrand: boolean;
+  navigatesToCheckout: boolean;
 };
 
 function resolveTariffButtonState(
@@ -37,42 +45,82 @@ function resolveTariffButtonState(
   currentTierPrice: number,
   hasUsedTrial: boolean,
 ): TariffButtonState {
-  const cardPrice = tariff.price_monthly;
+  const cardPrice = resolveTariffPriceKopecks(tariff);
 
   if (tariff.id === "trial") {
     const trialBlocked =
       hasUsedTrial || (currentTierId !== null && currentTierId !== "free");
 
     if (trialBlocked) {
-      return { label: "Уже использован", disabled: true, useBrand: false };
+      return {
+        label: "Уже использован",
+        isHardBlocked: true,
+        useBrand: false,
+        navigatesToCheckout: false,
+      };
     }
 
-    return { label: "Попробовать", disabled: false, useBrand: true };
+    return {
+      label: "Попробовать",
+      isHardBlocked: false,
+      useBrand: true,
+      navigatesToCheckout: false,
+    };
   }
 
   if (tariff.id === "free" || cardPrice === 0) {
     const onPaidTier = currentTierPrice > 0;
 
     if (onPaidTier) {
-      return { label: "Недоступно", disabled: true, useBrand: false };
+      return {
+        label: "Недоступно",
+        isHardBlocked: true,
+        useBrand: false,
+        navigatesToCheckout: false,
+      };
     }
 
     if (currentTierId === "free") {
-      return { label: "Текущий тариф", disabled: true, useBrand: false };
+      return {
+        label: "Текущий тариф",
+        isHardBlocked: true,
+        useBrand: false,
+        navigatesToCheckout: false,
+      };
     }
 
-    return { label: "Активировать", disabled: false, useBrand: false };
+    return {
+      label: "Активировать",
+      isHardBlocked: false,
+      useBrand: false,
+      navigatesToCheckout: false,
+    };
   }
 
   if (cardPrice === currentTierPrice) {
-    return { label: "Продлить", disabled: false, useBrand: true };
+    return {
+      label: "Продлить",
+      isHardBlocked: false,
+      useBrand: true,
+      navigatesToCheckout: true,
+    };
   }
 
   if (cardPrice > currentTierPrice) {
-    return { label: "Улучшить", disabled: false, useBrand: true };
+    return {
+      label: "Улучшить",
+      isHardBlocked: false,
+      useBrand: true,
+      navigatesToCheckout: true,
+    };
   }
 
-  return { label: "Даунгрейд недоступен", disabled: true, useBrand: false };
+  return {
+    label: "Перейти",
+    isHardBlocked: false,
+    useBrand: true,
+    navigatesToCheckout: true,
+  };
 }
 
 function getDiscountPercent(tariff: TariffRow, period: BillingPeriod): number {
@@ -119,7 +167,9 @@ export function TariffCard({
   currentTierPrice,
   hasUsedTrial,
   hasPendingInvoice = false,
+  checkoutBlockReason = null,
 }: TariffCardProps) {
+  const router = useRouter();
   const discountPercent = getDiscountPercent(tariff, period);
   const monthlyRubles = getDiscountedPriceInRubles(
     tariff.price_monthly,
@@ -132,6 +182,10 @@ export function TariffCard({
   const features = parseStringArray(tariff.features);
   const presents = parseStringArray(tariff.presents);
   const limitsText = parseStringArray(tariff.limits_text);
+  const limitsLines =
+    limitsText.length > 0
+      ? limitsText
+      : buildTierLimitLines(tariff.limits, tariff.category);
   const buttonState = resolveTariffButtonState(
     tariff,
     currentTierId,
@@ -139,14 +193,26 @@ export function TariffCard({
     hasUsedTrial,
   );
 
-  const isPaidAction =
-    buttonState.useBrand &&
-    !buttonState.disabled &&
-    tariff.price_monthly > 0 &&
-    tariff.id !== "trial" &&
-    !hasPendingInvoice;
-
   const checkoutHref = `/dashboard/checkout?tier=${encodeURIComponent(tariff.id)}&period=${period}`;
+
+  function handleCheckoutClick() {
+    if (hasPendingInvoice) {
+      toast.error(PENDING_INVOICE_MESSAGE);
+      return;
+    }
+
+    if (checkoutBlockReason) {
+      toast.error(checkoutBlockReason);
+      return;
+    }
+
+    router.push(checkoutHref);
+  }
+
+  const showCheckoutButton =
+    buttonState.navigatesToCheckout &&
+    resolveTariffPriceKopecks(tariff) > 0 &&
+    tariff.id !== "trial";
 
   return (
     <Card className="relative flex h-full flex-col overflow-hidden py-0">
@@ -157,7 +223,6 @@ export function TariffCard({
       ) : null}
 
       <CardContent className="flex flex-1 flex-col gap-6 px-5 pt-8 pb-4">
-        {/* Header */}
         <div className="space-y-3 text-center">
           <h2 className="text-2xl font-bold tracking-tight">{tariff.name}</h2>
           {tariff.description ? (
@@ -167,7 +232,6 @@ export function TariffCard({
           ) : null}
         </div>
 
-        {/* Price */}
         <div className="space-y-2 text-center">
           <p className="text-4xl font-bold tracking-tight md:text-5xl">
             {formatPriceByn(rublesToKopecks(totalRubles))}
@@ -186,12 +250,11 @@ export function TariffCard({
           </p>
         </div>
 
-        {/* Limits */}
-        {limitsText.length > 0 ? (
+        {limitsLines.length > 0 ? (
           <section className="space-y-3 border-t pt-4">
             <SectionHeading icon={Cpu} title="Лимиты" />
             <ul className="space-y-2.5 text-left">
-              {limitsText.map((limit) => (
+              {limitsLines.map((limit) => (
                 <li
                   key={`${tariff.id}-limit-${limit}`}
                   className="flex gap-2.5 text-sm leading-snug"
@@ -207,7 +270,6 @@ export function TariffCard({
           </section>
         ) : null}
 
-        {/* Features */}
         {features.length > 0 ? (
           <section className="space-y-3 border-t pt-4">
             <SectionHeading icon={CheckCircle} title="Функционал" />
@@ -228,7 +290,6 @@ export function TariffCard({
           </section>
         ) : null}
 
-        {/* Presents */}
         {presents.length > 0 ? (
           <section className="space-y-3 border-t pt-4">
             <SectionHeading icon={Gift} title="Бонусы" />
@@ -250,38 +311,28 @@ export function TariffCard({
       </CardContent>
 
       <CardFooter className="mt-auto border-t px-5 py-5">
-        {hasPendingInvoice &&
-        buttonState.useBrand &&
-        !buttonState.disabled &&
-        tariff.price_monthly > 0 &&
-        tariff.id !== "trial" ? (
+        {showCheckoutButton ? (
           <Button
             type="button"
-            disabled
-            className="h-11 w-full text-base font-semibold"
-          >
-            Ожидает оплаты счёта
-          </Button>
-        ) : isPaidAction ? (
-          <Button
-            asChild
+            onClick={handleCheckoutClick}
             className={cn(
               "h-11 w-full text-base font-semibold",
-              "bg-brand text-brand-foreground hover:bg-brand/90",
+              buttonState.useBrand &&
+                "bg-brand text-brand-foreground hover:bg-brand/90",
             )}
           >
-            <Link href={checkoutHref}>{buttonState.label}</Link>
+            {hasPendingInvoice ? "Ожидает оплаты счёта" : buttonState.label}
           </Button>
         ) : (
           <Button
             type="button"
-            disabled={buttonState.disabled}
+            disabled={buttonState.isHardBlocked}
             variant={buttonState.useBrand ? "default" : "secondary"}
             className={cn(
               "h-11 w-full text-base font-semibold",
               buttonState.useBrand &&
                 "bg-brand text-brand-foreground hover:bg-brand/90",
-              buttonState.disabled && "text-muted-foreground",
+              buttonState.isHardBlocked && "text-muted-foreground",
             )}
           >
             {buttonState.label}

@@ -20,9 +20,13 @@ import { cn } from "@/lib/utils";
 
 type ProfileStatusBannerProps = {
   profile: OrganizationProfileRow;
+  organizationId: string;
 };
 
-export function ProfileStatusBanner({ profile }: ProfileStatusBannerProps) {
+export function ProfileStatusBanner({
+  profile,
+  organizationId,
+}: ProfileStatusBannerProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<ProfileModerationState>({});
@@ -33,7 +37,7 @@ export function ProfileStatusBanner({ profile }: ProfileStatusBannerProps) {
 
   function handleSubmitForModeration() {
     startTransition(async () => {
-      const result = await submitProfileForModeration({});
+      const result = await submitProfileForModeration({}, organizationId);
       setFeedback(result);
       if (result.success) {
         router.refresh();
@@ -43,7 +47,7 @@ export function ProfileStatusBanner({ profile }: ProfileStatusBannerProps) {
 
   function handleVisibilityChange(checked: boolean) {
     startTransition(async () => {
-      const result = await setProfileVisibility(checked);
+      const result = await setProfileVisibility(checked, organizationId);
       setFeedback(result);
       if (result.success) {
         router.refresh();

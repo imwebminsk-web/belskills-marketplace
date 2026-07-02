@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { isGlobalAdmin, loadGateProfile } from "@/lib/auth/access";
+import {
+  calculateBonusDays,
+  calculateSubscriptionDaysAdded,
+} from "@/lib/billing-math";
 import { createClient } from "@/lib/supabase/server";
 
 type ActionError = { success: false; error: string };
@@ -98,7 +102,43 @@ export async function approveBillingRequest(
     return { success: false, error: "Счёт уже обработан другим администратором" };
   }
 
-  const daysAdded = request.period_months * 30;
+  const [{ data: organizationBillingState }, { data: nextTier }] = await Promise.all([
+    auth.supabase
+      .from("organizations")
+      .select(
+        `
+        tier_id,
+        tier_expires_at,
+        subscription_tiers (
+          price_monthly
+        )
+      `,
+      )
+      .eq("id", request.organization_id)
+      .maybeSingle(),
+    auth.supabase
+      .from("subscription_tiers")
+      .select("price_monthly")
+      .eq("id", request.tier_id)
+      .maybeSingle(),
+  ]);
+
+  const currentTier = Array.isArray(organizationBillingState?.subscription_tiers)
+    ? organizationBillingState?.subscription_tiers[0]
+    : organizationBillingState?.subscription_tiers;
+
+  const bonusDays = calculateBonusDays({
+    currentTierId: organizationBillingState?.tier_id ?? null,
+    nextTierId: request.tier_id,
+    currentTierExpiresAt: organizationBillingState?.tier_expires_at ?? null,
+    currentTierMonthlyKopecks: currentTier?.price_monthly ?? null,
+    nextTierMonthlyKopecks: nextTier?.price_monthly ?? 0,
+  }).bonusDays;
+
+  const daysAdded = calculateSubscriptionDaysAdded(
+    request.period_months,
+    bonusDays,
+  );
 
   const { error: historyError } = await auth.supabase
     .from("subscription_history")

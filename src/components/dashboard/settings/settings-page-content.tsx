@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Database } from "@/types/database.types";
 import type { TranslationKey } from "@/lib/i18n/dict";
+import type { OrganizationTypeValue } from "@/lib/validations/organization-schema";
 
 type ProfileRole = Database["public"]["Enums"]["profile_role"];
 
@@ -29,6 +30,7 @@ type SettingsPageContentProps = {
   displayName: string;
   feedbackKey: "saved" | "empty_name" | "update_failed" | null;
   staffSchoolBrandName: string | null;
+  staffOrganizationType: OrganizationTypeValue | null;
 };
 
 function roleLabel(role: ProfileRole, t: (key: TranslationKey) => string): string {
@@ -53,6 +55,7 @@ export function SettingsPageContent({
   displayName,
   feedbackKey,
   staffSchoolBrandName,
+  staffOrganizationType,
 }: SettingsPageContentProps) {
   const { t } = useLanguage();
 
@@ -140,7 +143,10 @@ export function SettingsPageContent({
 
       {role === "student" || staffSchoolBrandName ? (
         <div className="px-4 lg:px-6">
-          <BecomeCreatorSection schoolBrandName={staffSchoolBrandName} />
+          <BecomeCreatorSection
+            schoolBrandName={staffSchoolBrandName}
+            organizationType={staffOrganizationType}
+          />
         </div>
       ) : null}
     </div>

@@ -20,9 +20,9 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PENDING_INVOICE_MESSAGE } from "@/lib/billing/checkout-rules";
 import type { BillingPeriod } from "@/lib/utils/pricing";
 import { formatPriceByn } from "@/lib/utils/pricing";
-import { PENDING_INVOICE_MESSAGE } from "@/lib/billing/checkout-rules";
 
 type CheckoutClientProps = {
   organizationId: string;
@@ -31,7 +31,10 @@ type CheckoutClientProps = {
   tierName: string;
   period: BillingPeriod;
   periodLabel: string;
-  originalTotalKopecks: number;
+  baseTotalKopecks: number;
+  bonusDays: number;
+  isUpgrade: boolean;
+  checkoutError: string | null;
   tierDiscountPercent: number;
   initialB2BDetails?: B2BBillingDetails | null;
   hasPendingInvoice: boolean;
@@ -44,7 +47,10 @@ export function CheckoutClient({
   tierName,
   period,
   periodLabel,
-  originalTotalKopecks,
+  baseTotalKopecks,
+  bonusDays,
+  isUpgrade,
+  checkoutError,
   tierDiscountPercent,
   initialB2BDetails,
   hasPendingInvoice,
@@ -55,10 +61,15 @@ export function CheckoutClient({
   );
   const [isApplying, startApplyTransition] = useTransition();
 
-  const finalTotalKopecks = appliedCoupon?.newPrice ?? originalTotalKopecks;
+  const finalTotalKopecks = appliedCoupon?.newPrice ?? baseTotalKopecks;
   const hasPromoDiscount = appliedCoupon !== null && appliedCoupon.discountAmount > 0;
 
   function handleApplyPromo() {
+    if (hasPendingInvoice) {
+      toast.error(PENDING_INVOICE_MESSAGE);
+      return;
+    }
+
     const code = promoInput.trim();
     if (!code) {
       toast.error("Введите промокод");
@@ -66,7 +77,7 @@ export function CheckoutClient({
     }
 
     startApplyTransition(async () => {
-      const result = await validateCoupon(code, originalTotalKopecks);
+      const result = await validateCoupon(code, baseTotalKopecks);
 
       if (!result.success) {
         setAppliedCoupon(null);
@@ -94,6 +105,14 @@ export function CheckoutClient({
         </Alert>
       ) : null}
 
+      {!checkoutError && isUpgrade && bonusDays > 0 ? (
+        <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950 lg:col-span-2 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-50">
+          <AlertDescription>
+            Бонус за остаток текущего тарифа: +{bonusDays} дней.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <Card className="h-fit">
         <CardHeader>
           <CardTitle>Ваш заказ</CardTitle>
@@ -112,7 +131,9 @@ export function CheckoutClient({
                   : "text-lg font-bold"
               }
             >
-              {formatPriceByn(originalTotalKopecks)}
+              {formatPriceByn(
+                hasPromoDiscount ? baseTotalKopecks : finalTotalKopecks,
+              )}
             </p>
           </div>
 
@@ -140,9 +161,7 @@ export function CheckoutClient({
                   }
                   placeholder="START2026"
                   className="uppercase"
-                  disabled={
-                    hasPendingInvoice || isApplying || Boolean(appliedCoupon)
-                  }
+                  disabled={isApplying || Boolean(appliedCoupon)}
                 />
               </div>
               {appliedCoupon ? (
@@ -215,7 +234,8 @@ export function CheckoutClient({
             period={period}
             initialB2BDetails={initialB2BDetails}
             couponId={appliedCoupon?.couponId ?? null}
-            disabled={hasPendingInvoice}
+            validationError={checkoutError}
+            hasPendingInvoice={hasPendingInvoice}
           />
         </CardContent>
       </Card>

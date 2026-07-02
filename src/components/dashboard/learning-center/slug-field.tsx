@@ -17,9 +17,10 @@ import { cn } from "@/lib/utils";
 
 type SlugFieldProps = {
   initialSlug: string;
+  organizationId: string;
 };
 
-export function SlugField({ initialSlug }: SlugFieldProps) {
+export function SlugField({ initialSlug, organizationId }: SlugFieldProps) {
   const router = useRouter();
   const [slug, setSlug] = useState(initialSlug || "");
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -59,7 +60,7 @@ export function SlugField({ initialSlug }: SlugFieldProps) {
     startSaving(async () => {
       setFieldError(null);
 
-      const result = await updateOrganizationSlug(normalizedSlug);
+      const result = await updateOrganizationSlug(normalizedSlug, organizationId);
 
       if (!result.success) {
         setFieldError(result.error);
